@@ -1,0 +1,20 @@
+from dataclasses import dataclass
+from document import Document
+from aql_filter import Filter, RelationFilter, AttributeFilter
+import enum
+
+@dataclass
+{% for model in models %}
+class {{model.name}}(Document):
+
+    def __init__(self
+{% for prop in model.properties %}
+            , {{prop._name}}: {{prop._type.type.__name__ or prop._type.type or None}} = {{prop._default}}
+{% endfor %}
+    ):
+{% for prop in model.properties %}
+        self.{{prop._name}} = {{prop._name}}
+{% endfor %}
+
+
+{% endfor %}
