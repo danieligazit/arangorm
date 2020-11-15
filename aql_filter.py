@@ -1,66 +1,160 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
-from document import Collection
-from relation import Relation
+from typing import Any, List, Type, Tuple, Dict
+from collection import Collection, EdgeCollection
 
 
 @dataclass
-class Filter:
+class Filter(ABC):
     collection_from: Collection
-    item: Any
+    item: 'Filter'
+
+    # @abstractmethod
+    # def filter_by(self, prefix: str = 'p', depth: int = 0) -> Tuple[str, Dict[str, Any]]:
+    #     pass
 
 
 @dataclass
-class RelationFilterGenerator:
-    relation: Relation
-    item: Any
-    relation_filter: Any
+class EdgeFilter(Filter):
+    outbound_item: Any
+    edge_collection: EdgeCollection
+
+    def filter_by(self, prefix: str = 'p', depth: int = 0) -> Tuple[str, Dict[str, Any]]:
+        outbound_entities_query, outbound_parameters = self.outbound_item.filter_by('l' + prefix)
+
+        if self.item is None:
+            return f'''
+            let outbound_entities = ({outbound_entities_query})
+            for outbound_entity in outbound_entities
+                for result in 1..1 INBOUND outbound_entity._id {self.edge_collection.name}
+                    return result
+            ''', outbound_parameters
+
+        results_query, results_parameters = self.item.filter_by('r'+prefix, depth+1)
+        results_parameters.update(outbound_parameters)
+        return f'''
+            let results_a = ({results_query})
+
+            let outbound_entities = ({outbound_entities_query})
+            for outbound_entity in outbound_entities
+                for result in 1..1 INBOUND outbound_entity._id {self.edge_collection.name}
+                    filter result in results_a
+                    return result
+            ''', results_parameters
+
+
+@dataclass
+class EdgeFilterGenerator:
+    edge: EdgeCollection
+    item: Filter
+    edge_filter: Type[EdgeFilter]
 
     def __call__(self, outbound_filter):
-        return self.relation_filter(
-            collection_from=self.relation.collection_from,
+        return self.edge_filter(
+            collection_from=self.edge.from_collection,
             item=self.item,
             outbound_item=outbound_filter,
-            edge_collection_name=self.relation.collection_name
+            edge_collection=self.edge
         )
 
 
 @dataclass
-class RelationFilter(Filter):
-    outbound_item: Any
-    edge_collection_name: str
-
-    def filter_by(self):
-        if self.item is None:
-            return f'''
-            let outbound_entities = ({self.outbound_item.filter_by()})
-            for outbound_entity in outbound_entities
-                for result in 1..1 INBOUND outbound_entity._id {self.edge_collection_name}
-                    return result
-            '''
-
-        return f'''
-            let results_a = ({self.item.filter_by()})
-
-            let outbound_entities = ({self.outbound_item.filter_by()})
-            for outbound_entity in outbound_entities
-                for result in 1..1 INBOUND outbound_entity._id {self.edge_collection_name}
-                    filter result in results_a
-                    return result
-            '''
-
-
-@dataclass
 class AttributeFilter(Filter):
-    stmt: str
+    attribute: str
+    operator: str
+    compare_value: Any
 
-    def filter_by(self):
-        collection_name = self.collection_from.get_collection_name()
+    def filter_by(self, prefix: str = 'p', depth: int = 0) -> Tuple[str, Dict[str, Any]]:
+        collection_name = self.collection_from.name
+
+        compare_attribute = f'{prefix}{depth}'
+        params = {
+            compare_attribute: self.compare_value
+        }
+
+        statement = f'entity.{self.attribute} {self.operator} @{compare_attribute}'
         if not self.item:
-            return f'''for entity in {collection_name} {self.stmt} return entity'''
+            return f'''for entity in {collection_name} filter {statement} return entity''', params
 
-        previous_result = f'{collection_name}_entities'
-        return f'''let {previous_result} = ({self.item.filter_by()})
-        for entity in {previous_result}
-        {self.stmt}
-        return entity'''
+        previous, prev_params = self.item.filter_by(prefix, depth+1)
+        params.update(prev_params)
+        return f'''let previous = ({previous})
+        for entity in previous
+        filter {statement}
+        return entity''', params
+
+
+def int_attribute_filter(target_attribute_filter: Type[AttributeFilter]):
+    def decorator_function(func):
+        def inner_function(
+                cls,
+                value: Any = None,
+                value_not: Any = None,
+                lt: Any = None,
+                lte: Any = None,
+                gt: Any = None,
+                gte: Any = None,
+                value_in: List[Any] = None,
+                not_in: List[Any] = None,
+        ) -> AttributeFilter:
+            for compare_value, operator in [
+                (value, '=='),
+                (value_not, '!='),
+                (lt, '<'),
+                (lte, '<='),
+                (gt, '>'),
+                (gte, '>='),
+                (value_in, 'IN'),
+                (not_in, 'NOT IN'),
+            ]:
+                if compare_value:
+                    return target_attribute_filter(cls.get_collection(), None,
+                                                   stmt=f'''filter entity.name {operator} {compare_value}''')
+
+            raise ValueError('Method not provided with a compare value')
+
+        return inner_function
+
+    return decorator_function
+
+
+def string_attribute_filter(target_attribute_filter):
+    def decorator_function(func):
+        def inner_function(
+                cls,
+                value: str = None,
+                value_not: str = None,
+                lt: str = None,
+                lte: str = None,
+                gt: str = None,
+                gte: str = None,
+                value_in: List[str] = None,
+                not_in: List[str] = None,
+                like: str = None,
+                not_like: str = None,
+                matches_regex: str = None,
+                not_matches_regex: str = None
+        ):
+            for compare_value, operator in [
+                (value, '=='),
+                (value_not, '!='),
+                (lt, '<'),
+                (lte, '<='),
+                (gt, '>'),
+                (gte, '>='),
+                (value_in, 'IN'),
+                (not_in, 'NOT IN'),
+                (like, 'LIKE'),
+                (not_like, 'NOT LIKE'),
+                (matches_regex, '=~'),
+                (not_matches_regex, "!~")
+            ]:
+                if compare_value:
+                    return target_attribute_filter(cls.get_collection(), None,
+                                                   stmt=f'''filter entity.name {operator} '{compare_value}' ''')
+
+            raise ValueError('Method not provided with a compare value')
+
+        return inner_function
+
+    return decorator_function

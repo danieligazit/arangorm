@@ -1,8 +1,9 @@
 from datetime import datetime
 
 from arango import ArangoClient
-
-from document import Document, Collection
+from collection import Collection
+from aql_filter import Filter
+from document import Document
 from company import Company
 from person import Person
 
@@ -14,14 +15,14 @@ class DB:
         self.db = self.client.db('test', username=username, password=password)
 
     def ensure_collection(self, collection: Collection):
-        collection_name = collection.get_collection_name()
-        if not self.db.has_collection(collection_name):
-            return self.db.create_collection(collection_name)
+        if not self.db.has_collection(collection.name):
+            return self.db.create_collection(collection.name)
 
-        return self.db[collection_name]
+        return self.db[collection.name]
 
-    def _get_query_results(self, filter_item):
-        return map(filter_item.collection_from._load, self.db.aql.execute(filter_item.filter_by()))
+    def _get_query_results(self, filter_item: Filter):
+        query, params = filter_item.filter_by()
+        return map(filter_item.collection_from.document_type._load, self.db.aql.execute(query, bind_vars=params))
 
     def get(self, filter_item):
         return next(self._get_query_results(filter_item), None)
@@ -47,11 +48,13 @@ class DB:
 
 
 if __name__ == '__main__':
-    print(Person.works_at(Company.by_name('zirra')).by_name(like='%Feriha%').filter_by())
+    db = DB(username='root', password='')
+    print(Company.by_name('zirra').by_name('zirra').filter_by()[0])
+    print(db.get(Company.by_name('zirra').by_name('zirra')))
     #
     # start = datetime.now()
     #
-    # db = DB(username='root', password='')
+
     #
     # db.add(Company(name='zirra'))
     #

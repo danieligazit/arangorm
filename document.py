@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import Type
+from collection import Collection
 
 
 class Document(ABC):
@@ -8,20 +8,15 @@ class Document(ABC):
         self._rev = _rev
         self._id = _id
 
-    @classmethod
     @abstractmethod
-    def get_collection_name(self):
-        pass
-
-    @abstractmethod
-    def get_collection(self):
+    def get_collection(self) -> Collection:
         pass
 
     @classmethod
-    def _load(cls, d: dict):
+    def _load(cls, d: dict) -> 'Document':
         return cls(**d)
 
-    def _dump(self):
+    def _dump(self) -> dict:
         result = vars(self)
 
         for attribute in ['_key', '_rev', '_id']:
@@ -30,8 +25,5 @@ class Document(ABC):
 
         return result
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'{type(self)}{vars(self)}'
-
-
-Collection = Type[Document]

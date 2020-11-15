@@ -1,19 +1,20 @@
 from dataclasses import dataclass
 from document import Document
-from aql_filter import Filter, RelationFilter, AttributeFilter
+from aql_filter import Filter, EdgeFilter, AttributeFilter
+from collection_definitions import COMPANY_COLLECTION
 
 
 @dataclass
 class CompanyFilter(Filter):
     def by_name(self, name):
-        return CompanyRelationFilter(Company, self, f'''filter entity.name == '{name}' ''')
+        return CompanyAttributeFilter(COMPANY_COLLECTION, self, attribute='name', operator='==', compare_value=name)
 
 
-class CompanyRelationFilter(RelationFilter, CompanyFilter):
+class CompanyEdgeFilter(EdgeFilter, CompanyFilter):
     pass
 
 
-class CompanyRelationFilter(AttributeFilter, CompanyFilter):
+class CompanyAttributeFilter(AttributeFilter, CompanyFilter):
     pass
 
 
@@ -22,13 +23,12 @@ class Company(Document):
         super().__init__(**kwargs)
         self.name = name
 
-    @classmethod
-    def get_collection_name(cls):
-        return 'company'
-
     def get_collection(self):
-        return Company
+        return COMPANY_COLLECTION
 
     @classmethod
     def by_name(cls, name: str):
-        return AttributeFilter(cls, None, stmt=f'''filter entity.name == '{name}' ''')
+        return CompanyAttributeFilter(COMPANY_COLLECTION, None, attribute='name', operator='==', compare_value=name)
+
+
+COMPANY_COLLECTION.document_type = Company

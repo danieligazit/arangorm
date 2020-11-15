@@ -1,16 +1,15 @@
 import os
-import argparse
-import json
-import networkx
+from pathlib import Path
+
 from jinja2 import Environment, FileSystemLoader
+from utils import convert_camel_to_snake
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class ModelBuilder:
-    """Converts a JSON Schema to a Plain Old Python Object class"""
-
     CLASS_TEMPLATE_FNAME = '_class.tmpl'
+    COLLECTION_DEFINITION_TEMPLATE_FNAME = '_collection_definition.tmpl'
 
     J2P_TYPES = {
         'string': str,
@@ -22,15 +21,13 @@ class ModelBuilder:
         'null': None
     }
 
-    def __init__(self):
+    def __init__(self, schema: dict):
         self.jinja = Environment(loader=FileSystemLoader(searchpath=SCRIPT_DIR), trim_blocks=True)
-
+        self.schema = schema
         self.definitions = []
+        self.edges = []
 
-    def load(self, schema):
-        self.process(schema)
-
-    def get_model_depencencies(self, model):
+    def get_model_dependencies(self, model):
         deps = set()
         for prop in model['properties']:
             if prop['_type']['type'] not in self.J2P_TYPES.values():
@@ -39,64 +36,60 @@ class ModelBuilder:
                 deps.add(prop['_type']['subtype'])
         return list(deps)
 
-    def process(self, json_schema):
-        for _obj_name, _obj in json_schema['definitions'].items():
+    def process(self):
+        for _obj_name, _obj in self.schema['definitions'].items():
             model = self.definition_parser(_obj_name, _obj)
             self.definitions.append(model)
 
-        # topological oderd dependencies
-        g = networkx.DiGraph()
-        models_map = {}
-        for model in self.definitions:
-            models_map[model['name']] = model
-            deps = self.get_model_depencencies(model)
-            if not deps:
-                g.add_edge(model['name'], '')
-            for dep in deps:
-                g.add_edge(model['name'], dep)
-
-        self.definitions = []
-        for model_name in networkx.topological_sort(g):
-            if model_name in models_map:
-                self.definitions.append(models_map[model_name])
-
     def definition_parser(self, _obj_name, _obj):
-        model = {}
-        model['name'] = _obj_name
-        if 'type' in _obj:
-            model['type'] = self.type_parser(_obj)
 
-        model['properties'] = []
-        if 'properties' in _obj:
-            for _prop_name, _prop in _obj['properties'].items():
-                _type = self.type_parser(_prop)
-                _default = None
-                if 'default' in _prop:
-                    _default = _type['type'](_prop['default'])
-                    if _type['type'] == str:
-                        _default = "'{}'".format(_default)
+        model = {
+            'name': _obj_name,
+            'snake_case_name': convert_camel_to_snake(_obj_name),
+            'properties': [],
+            'edges': []
+        }
 
-                _enum = None
-                if 'enum' in _prop:
-                    _enum = _prop['enum']
+        if 'properties' not in _obj:
+            return model
 
-                _format = None
-                if 'format' in _prop:
-                    _format = _prop['format']
-                if _type['type'] == list and 'items' in _prop and isinstance(_prop['items'], list):
-                    _format = _prop['items'][0]['format']
+        for _prop_name, _prop in _obj['properties'].items():
+            is_relation, _type = self.parse_type(_prop)
 
-                prop = {
-                    '_name': _prop_name,
-                    '_type': _type,
-                    '_default': _default,
-                    '_enum': _enum,
-                    '_format': _format
-                }
-                model['properties'].append(prop)
+            if is_relation:
+                edge = {'from': _obj_name, 'name': _prop_name, 'to': _type['to']}
+                self.edges.append(edge)
+                model['edges'].append(edge)
+                continue
+
+            _default = None
+            if 'default' in _prop:
+                _default = _type['type'](_prop['default'])
+                if _type['type'] == str:
+                    _default = "'{}'".format(_default)
+
+            _enum = None
+            if 'enum' in _prop:
+                _enum = _prop['enum']
+
+            _format = None
+            if 'format' in _prop:
+                _format = _prop['format']
+            if _type['type'] == list and 'items' in _prop and isinstance(_prop['items'], list):
+                _format = _prop['items'][0]['format']
+
+            prop = {
+                '_name': _prop_name,
+                '_type': _type,
+                '_default': _default,
+                '_enum': _enum,
+                '_format': _format
+            }
+            model['properties'].append(prop)
+
         return model
 
-    def type_parser(self, t):
+    def parse_type(self, t):
         _type = None
         _subtype = None
         if 'type' in t:
@@ -122,16 +115,40 @@ class ModelBuilder:
                         _subtype = ref.split('/')[-1]
             elif isinstance(t['type'], list):
                 _type = self.J2P_TYPES[t['type'][0]]
-            elif t['type']:
+            elif t['type'] in self.J2P_TYPES:
                 _type = self.J2P_TYPES[t['type']]
+
         elif '$ref' in t:
             _type = t['$ref'].split('/')[-1]
         elif 'anyOf' in t or 'allOf' in t or 'oneOf' in t:
             _type = list
-        return {'type': _type, 'subtype': _subtype}
+
+        elif 'connects_to' in t:
+            return True, {'to': t['connects_to']}
+
+        return False, {'type': _type, 'subtype': _subtype}
 
     def render(self):
-        return self.jinja.get_template(self.CLASS_TEMPLATE_FNAME).render(models=self.definitions)
+        self.process()
+        return {
+            f'{convert_camel_to_snake(model["name"])}.py': self.jinja.get_template(self.CLASS_TEMPLATE_FNAME).render(
+                model=model
+            )
+            for model in self.definitions
+        }
+
+    def render_into(self, destination_dir: str):
+        self.process()
+        destination = Path(destination_dir)
+
+        for model in self.definitions:
+            destination_file = destination / Path(f'{convert_camel_to_snake(model["name"])}.py')
+            self.jinja.get_template(self.CLASS_TEMPLATE_FNAME).stream(model=model).dump(str(destination_file))
+
+        self.jinja.get_template(self.COLLECTION_DEFINITION_TEMPLATE_FNAME).stream(
+            relations=self.edges,
+            models=self.definitions
+        ).dump(str(destination / Path('collection_definition.py')))
 
 
 if __name__ == '__main__':
@@ -144,11 +161,23 @@ if __name__ == '__main__':
                     'abbreviation': {'type': 'string'},
                 },
                 'additionalProperties': False,
+            },
+
+            'Company': {
+                'name': 'Country',
+                'properties': {
+                    'name': {'type': 'string'},
+                    'employee_number': {'type': 'integer'},
+                    'located_at': {'connects_to': "Country"}
+                },
+                'additionalProperties': False,
             }
         }
 
     }
 
-    mb = ModelBuilder()
-    mb.load(schema)
-    print(mb.render())
+    mb = ModelBuilder(schema)
+    mb.render_into('model')
+    # for file_name, model in mb.render().items():
+    #     print(file_name)
+    #     print(model)

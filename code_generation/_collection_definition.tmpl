@@ -1,0 +1,9 @@
+from collection import Collection, EdgeCollection
+
+{% for model in models %}
+{{ model.name.upper() }}_COLLECTION = Collection(name='{{ model.snake_case_name }}')
+{% endfor %}
+
+{% for edge in relations %}
+{{ edge.name.upper() }} = EdgeCollection(from_collection={{edge.from.upper()}}_COLLECTION, name='{{edge.name}}', to_collection={{edge.to.upper()}}_COLLECTION)
+{% endfor %}

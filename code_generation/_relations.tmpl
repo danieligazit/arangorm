@@ -1,10 +1,7 @@
 from dataclasses import dataclass
 from document import Document
-from aql_filter import Filter, EdgeFilter, AttributeFilter, attribute_filter, string_attribute_filter, EdgeFilterGenerator
+from aql_filter import Filter, RelationFilter, AttributeFilter, attribute_filter, string_attribute_filter
 from typing import List
-import code_generation.model.collection_definition as col
-from utils import classproperty
-from collection import Collection
 
 
 @dataclass
@@ -12,7 +9,7 @@ class {{model.name}}Filter:
     pass
 
 
-class {{model.name}}EdgeFilter(EdgeFilter, {{model.name}}Filter):
+class {{model.name}}RelationFilter(RelationFilter, {{model.name}}Filter):
     pass
 
 
@@ -23,20 +20,14 @@ class {{model.name}}AttributeFilter(AttributeFilter, {{model.name}}Filter):
 @dataclass
 class {{model.name}}(Document):
 
-    def __init__(self,
+    def __init__(self
 {% for prop in model.properties %}
-            {{prop._name}}: {{prop._type.type.__name__ or prop._type.type or None}} = {{prop._default or None}},
+            , {{prop._name}}: {{prop._type.type.__name__ or prop._type.type or None}} = {{prop._default or None}}
 {% endfor %}
-            **kwargs
     ):
-        super().__init__(**kwargs)
 {% for prop in model.properties %}
         self.{{prop._name}} = {{prop._name}}
 {% endfor %}
-
-    @classmethod
-    def get_collection(self) -> Collection:
-        return col.{{model.name.upper()}}_COLLECTION
 
 {% for prop in model.properties %}
     @classmethod
@@ -63,10 +54,5 @@ class {{model.name}}(Document):
     ) -> Filter:
         pass
 
-{% endfor %}
-{% for edge in model.edges %}
-    @classproperty
-    def {{edge.name}}(cls):
-        return EdgeFilterGenerator(col.{{edge.name.upper()}}, None, {{model.name}}EdgeFilter)
 {% endfor %}
 
