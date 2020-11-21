@@ -8,8 +8,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class ModelBuilder:
-    CLASS_TEMPLATE_FNAME = '_class.tmpl'
-    COLLECTION_DEFINITION_TEMPLATE_FNAME = '_collection_definition.tmpl'
+    CLASS_TEMPLATE_FNAME = 'code_generation/_class.tmpl'
+    COLLECTION_DEFINITION_TEMPLATE_FNAME = 'code_generation/_collection_definition.tmpl'
+    INIT_FILE_TEMPLATE_FNAME = 'code_generation/_init_file.tmpl'
 
     J2P_TYPES = {
         'string': str,
@@ -142,13 +143,57 @@ class ModelBuilder:
         destination = Path(destination_dir)
 
         for model in self.definitions:
-            destination_file = destination / Path(f'{convert_camel_to_snake(model["name"])}.py')
-            self.jinja.get_template(self.CLASS_TEMPLATE_FNAME).stream(model=model).dump(str(destination_file))
+            destination_file = destination / Path(f'{model["snake_case_name"]}.py')
+            self.jinja.get_template(self.CLASS_TEMPLATE_FNAME).stream(
+                model=model,
+                attribute_filter_imports=['string_attribute_filter', 'comparable_attribute_filter', 'default_attribute_filter'],
+                type_to_attribute_filter_decorator={
+                    'str': 'string_attribute_filter',
+                    'int': 'comparable_attribute_filter',
+                    'float': 'comparable_attribute_filter',
+                    'bool': 'default_attribute_filter'
+                },
+                type_to_attribute_filter_parameters={
+                    'str': '''value: str = None,
+            is_not: str = None,
+            value_in: List[str] = None,
+            not_in: List[str] = None,
+            like: str = None,
+            not_like: str = None,
+            matches_regex: str = None,
+            not_matches_regex: str = None''',
+                    'int': '''value: int = None,
+            is_not: int = None,
+            lt: int = None,
+            lte: int = None,
+            gt: int = None,
+            gte: int = None,
+            value_in: List[int] = None,
+            not_in: List[int] = None''',
+                    'float': '''value: float = None,
+            is_not: float = None,
+            lt: float = None,
+            lte: float = None,
+            gt: float = None,
+            gte: float = None,
+            value_in: List[float] = None,
+            not_in: List[float] = None''',
+                },
+                default_attribute_filter_parameters='''value: Any = None,
+            is_not: Any = None,
+            lt: Any = None,
+            value_in: List[Any] = None,
+            not_in: List[Any] = None''',
+            ).dump(str(destination_file))
 
         self.jinja.get_template(self.COLLECTION_DEFINITION_TEMPLATE_FNAME).stream(
             relations=self.edges,
-            models=self.definitions
+            models=self.definitions,
         ).dump(str(destination / Path('collection_definition.py')))
+
+        self.jinja.get_template(self.INIT_FILE_TEMPLATE_FNAME).stream(
+            models=self.definitions,
+        ).dump(str(destination / Path('__init__.py')))
 
 
 if __name__ == '__main__':

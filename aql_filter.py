@@ -1,8 +1,9 @@
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List, Type, Tuple, Dict
+from typing import Any, List, Type, Tuple, Dict, TypeVar, Generic
 from collection import Collection, EdgeCollection
-
+from document import Document
 
 @dataclass
 class Filter(ABC):
@@ -20,7 +21,7 @@ class EdgeFilter(Filter):
     edge_collection: EdgeCollection
 
     def filter_by(self, prefix: str = 'p', depth: int = 0) -> Tuple[str, Dict[str, Any]]:
-        outbound_entities_query, outbound_parameters = self.outbound_item.filter_by('l' + prefix)
+        outbound_entities_query, outbound_parameters = self.outbound_item.filter_by('l' + prefix, depth+1)
 
         if self.item is None:
             return f'''
@@ -30,7 +31,7 @@ class EdgeFilter(Filter):
                     return result
             ''', outbound_parameters
 
-        results_query, results_parameters = self.item.filter_by('r'+prefix, depth+1)
+        results_query, results_parameters = self.item.filter_by(self.item, 'r'+prefix, depth+1)
         results_parameters.update(outbound_parameters)
         return f'''
             let results_a = ({results_query})
@@ -44,7 +45,7 @@ class EdgeFilter(Filter):
 
 
 @dataclass
-class EdgeFilterGenerator:
+class EdgeFilterGenerator():
     edge: EdgeCollection
     item: Filter
     edge_filter: Type[EdgeFilter]
@@ -56,6 +57,16 @@ class EdgeFilterGenerator:
             outbound_item=outbound_filter,
             edge_collection=self.edge
         )
+
+    def filter_by(self, prefix: str = 'p', depth: int = 0):
+        outbound_entities_query, outbound_parameters = self.item.filter_by('l' + prefix, depth+1)
+
+        return f'''
+        let outbound_entities = ({outbound_entities_query})
+        for outbound_entity in outbound_entities
+            for v, result in 1..1 OUTBOUND outbound_entity._id {self.edge.name}
+                return result
+        ''', outbound_parameters
 
 
 @dataclass
@@ -84,7 +95,7 @@ class AttributeFilter(Filter):
         return entity''', params
 
 
-def int_attribute_filter(target_attribute_filter: Type[AttributeFilter]):
+def comparable_attribute_filter(attribute: str):
     def decorator_function(func):
         def inner_function(
                 cls,
@@ -108,8 +119,7 @@ def int_attribute_filter(target_attribute_filter: Type[AttributeFilter]):
                 (not_in, 'NOT IN'),
             ]:
                 if compare_value:
-                    return target_attribute_filter(cls.get_collection(), None,
-                                                   stmt=f'''filter entity.name {operator} {compare_value}''')
+                    return func(cls)(cls.get_collection(), None if isinstance(cls, Document) else cls, attribute, operator, compare_value)
 
             raise ValueError('Method not provided with a compare value')
 
@@ -118,16 +128,37 @@ def int_attribute_filter(target_attribute_filter: Type[AttributeFilter]):
     return decorator_function
 
 
-def string_attribute_filter(target_attribute_filter):
+def default_attribute_filter(attribute: str):
+    def decorator_function(func):
+        def inner_function(
+                cls,
+                value: Any = None,
+                value_not: Any = None,
+                value_in: List[Any] = None,
+                not_in: List[Any] = None,
+        ) -> AttributeFilter:
+            for compare_value, operator in [
+                (value, '=='),
+                (value_not, '!='),
+                (value_in, 'IN'),
+                (not_in, 'NOT IN'),
+            ]:
+                if compare_value:
+                    return func(cls)(cls.get_collection(), None if isinstance(cls, Document) else cls, attribute, operator, compare_value)
+
+            raise ValueError('Method not provided with a compare value')
+
+        return inner_function
+
+    return decorator_function
+
+
+def string_attribute_filter(attribute: str):
     def decorator_function(func):
         def inner_function(
                 cls,
                 value: str = None,
                 value_not: str = None,
-                lt: str = None,
-                lte: str = None,
-                gt: str = None,
-                gte: str = None,
                 value_in: List[str] = None,
                 not_in: List[str] = None,
                 like: str = None,
@@ -138,10 +169,6 @@ def string_attribute_filter(target_attribute_filter):
             for compare_value, operator in [
                 (value, '=='),
                 (value_not, '!='),
-                (lt, '<'),
-                (lte, '<='),
-                (gt, '>'),
-                (gte, '>='),
                 (value_in, 'IN'),
                 (not_in, 'NOT IN'),
                 (like, 'LIKE'),
@@ -150,11 +177,11 @@ def string_attribute_filter(target_attribute_filter):
                 (not_matches_regex, "!~")
             ]:
                 if compare_value:
-                    return target_attribute_filter(cls.get_collection(), None,
-                                                   stmt=f'''filter entity.name {operator} '{compare_value}' ''')
+                    return func(cls)(cls.get_collection(), None if inspect.isclass(cls) else cls, attribute, operator, compare_value)
 
             raise ValueError('Method not provided with a compare value')
 
         return inner_function
 
     return decorator_function
+

@@ -1,15 +1,33 @@
 from dataclasses import dataclass
 from document import Document
-from aql_filter import Filter, EdgeFilter, AttributeFilter, attribute_filter, string_attribute_filter, EdgeFilterGenerator
+from aql_filter import Filter, EdgeFilter, AttributeFilter, EdgeFilterGenerator, {{ ', '.join(attribute_filter_imports) }}
 from typing import List
-import code_generation.model.collection_definition as col
+from typing import Any
+import model.collection_definition as col
 from utils import classproperty
 from collection import Collection
 
 
 @dataclass
 class {{model.name}}Filter:
-    pass
+    @classmethod
+    def get_collection(cls) -> Collection:
+        return col.{{model.name.upper()}}_COLLECTION
+
+{% for prop in model.properties %}
+    @{{ type_to_attribute_filter_decorator.get(prop._type.type.__name__, default_attribute_filter_decorator) }}(attribute='{{ prop._name }}')
+    def by_{{prop._name}}(
+            self,
+            {{ type_to_attribute_filter_parameters.get(prop._type.type.__name__) }}
+    ) -> '{{model.name}}AttributeFilter':
+        return {{model.name}}AttributeFilter
+
+{% endfor %}
+{% for edge in model.edges %}
+    @property
+    def {{edge.name}}(self):
+        return EdgeFilterGenerator(col.{{edge.name.upper()}}, self, {{model.name}}EdgeFilter)
+{% endfor %}
 
 
 class {{model.name}}EdgeFilter(EdgeFilter, {{model.name}}Filter):
@@ -20,8 +38,30 @@ class {{model.name}}AttributeFilter(AttributeFilter, {{model.name}}Filter):
     pass
 
 
+class {{model.name}}Document(Document):
+    @classmethod
+    def get_collection(cls) -> Collection:
+        return col.{{model.name.upper()}}_COLLECTION
+
+{% for prop in model.properties %}
+    @classmethod
+    @{{ type_to_attribute_filter_decorator.get(prop._type.type.__name__, default_attribute_filter_decorator) }}(attribute='{{ prop._name }}')
+    def by_{{prop._name}}(
+            cls,
+            {{ type_to_attribute_filter_parameters.get(prop._type.type.__name__) }}
+    ) -> {{model.name}}AttributeFilter:
+        return {{model.name}}AttributeFilter
+
+{% endfor %}
+{% for edge in model.edges %}
+    @classproperty
+    def {{edge.name}}(cls):
+        return EdgeFilterGenerator(col.{{edge.name.upper()}}, None, {{model.name}}EdgeFilter)
+{% endfor %}
+
+
 @dataclass
-class {{model.name}}(Document):
+class {{model.name}}({{model.name}}Document):
 
     def __init__(self,
 {% for prop in model.properties %}
@@ -34,39 +74,5 @@ class {{model.name}}(Document):
         self.{{prop._name}} = {{prop._name}}
 {% endfor %}
 
-    @classmethod
-    def get_collection(self) -> Collection:
-        return col.{{model.name.upper()}}_COLLECTION
 
-{% for prop in model.properties %}
-    @classmethod
-{% if prop._type.type.__name__ == 'str' or prop._type.type == 'str' %}
-    @string_attribute_filter({{model.name}}AttributeFilter)
-{% else %}
-    @attribute_filter({{model.name}}AttributeFilter)
-{% endif %}
-    def by_{{prop._name}}(
-            cls,
-            value: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            is_not: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            lt: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            lte: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            gt: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            gte: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            value_in: List[{{prop._type.type.__name__ or prop._type.type or None}}] = None,
-            not_in: List[{{prop._type.type.__name__ or prop._type.type or None}}] = None{% if prop._type.type.__name__ == 'str' or prop._type.type == 'str' %},
-            like: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            not_like: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            matches_regex: {{prop._type.type.__name__ or prop._type.type or None}} = None,
-            not_matches_regex: {{prop._type.type.__name__ or prop._type.type or None}} = None
-{% endif %}
-    ) -> Filter:
-        pass
-
-{% endfor %}
-{% for edge in model.edges %}
-    @classproperty
-    def {{edge.name}}(cls):
-        return EdgeFilterGenerator(col.{{edge.name.upper()}}, None, {{model.name}}EdgeFilter)
-{% endfor %}
-
+col.{{model.name.upper()}}_COLLECTION.document_type = {{model.name}}
