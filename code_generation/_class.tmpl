@@ -1,20 +1,78 @@
 from dataclasses import dataclass
 from document import Document
-from aql_filter import Filter, RelationFilter, AttributeFilter
-import enum
+from aql_filter import Filter, EdgeFilter, AttributeFilter, EdgeFilterGenerator, {{ ', '.join(attribute_filter_imports) }}
+from typing import List
+from typing import Any
+import model.collection_definition as col
+from utils import classproperty
+from collection import Collection
+
 
 @dataclass
-{% for model in models %}
-class {{model.name}}(Document):
+class {{model.name}}Filter:
+    @classmethod
+    def get_collection(cls) -> Collection:
+        return col.{{model.name.upper()}}_COLLECTION
 
-    def __init__(self
 {% for prop in model.properties %}
-            , {{prop._name}}: {{prop._type.type.__name__ or prop._type.type or None}} = {{prop._default}}
+    @{{ type_to_attribute_filter_decorator.get(prop._type.type.__name__, default_attribute_filter_decorator) }}(attribute='{{ prop._name }}')
+    def by_{{prop._name}}(
+            self,
+            {{ type_to_attribute_filter_parameters.get(prop._type.type.__name__) }}
+    ) -> '{{model.name}}AttributeFilter':
+        return {{model.name}}AttributeFilter
+
 {% endfor %}
+{% for edge in model.edges %}
+    @property
+    def {{edge.name}}(self):
+        return EdgeFilterGenerator(col.{{edge.name.upper()}}, self, {{model.name}}EdgeFilter)
+{% endfor %}
+
+
+class {{model.name}}EdgeFilter(EdgeFilter, {{model.name}}Filter):
+    pass
+
+
+class {{model.name}}AttributeFilter(AttributeFilter, {{model.name}}Filter):
+    pass
+
+
+class {{model.name}}Document(Document):
+    @classmethod
+    def get_collection(cls) -> Collection:
+        return col.{{model.name.upper()}}_COLLECTION
+
+{% for prop in model.properties %}
+    @classmethod
+    @{{ type_to_attribute_filter_decorator.get(prop._type.type.__name__, default_attribute_filter_decorator) }}(attribute='{{ prop._name }}')
+    def by_{{prop._name}}(
+            cls,
+            {{ type_to_attribute_filter_parameters.get(prop._type.type.__name__) }}
+    ) -> {{model.name}}AttributeFilter:
+        return {{model.name}}AttributeFilter
+
+{% endfor %}
+{% for edge in model.edges %}
+    @classproperty
+    def {{edge.name}}(cls):
+        return EdgeFilterGenerator(col.{{edge.name.upper()}}, None, {{model.name}}EdgeFilter)
+{% endfor %}
+
+
+@dataclass
+class {{model.name}}({{model.name}}Document):
+
+    def __init__(self,
+{% for prop in model.properties %}
+            {{prop._name}}: {{prop._type.type.__name__ or prop._type.type or None}} = {{prop._default or None}},
+{% endfor %}
+            **kwargs
     ):
+        super().__init__(**kwargs)
 {% for prop in model.properties %}
         self.{{prop._name}} = {{prop._name}}
 {% endfor %}
 
 
-{% endfor %}
+col.{{model.name.upper()}}_COLLECTION.document_type = {{model.name}}

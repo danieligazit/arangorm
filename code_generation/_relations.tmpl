@@ -1,0 +1,58 @@
+from dataclasses import dataclass
+from document import Document
+from aql_filter import Filter, RelationFilter, AttributeFilter, attribute_filter, string_attribute_filter
+from typing import List
+
+
+@dataclass
+class {{model.name}}Filter:
+    pass
+
+
+class {{model.name}}RelationFilter(RelationFilter, {{model.name}}Filter):
+    pass
+
+
+class {{model.name}}AttributeFilter(AttributeFilter, {{model.name}}Filter):
+    pass
+
+
+@dataclass
+class {{model.name}}(Document):
+
+    def __init__(self
+{% for prop in model.properties %}
+            , {{prop._name}}: {{prop._type.type.__name__ or prop._type.type or None}} = {{prop._default or None}}
+{% endfor %}
+    ):
+{% for prop in model.properties %}
+        self.{{prop._name}} = {{prop._name}}
+{% endfor %}
+
+{% for prop in model.properties %}
+    @classmethod
+{% if prop._type.type.__name__ == 'str' or prop._type.type == 'str' %}
+    @string_attribute_filter({{model.name}}AttributeFilter)
+{% else %}
+    @attribute_filter({{model.name}}AttributeFilter)
+{% endif %}
+    def by_{{prop._name}}(
+            cls,
+            value: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            is_not: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            lt: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            lte: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            gt: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            gte: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            value_in: List[{{prop._type.type.__name__ or prop._type.type or None}}] = None,
+            not_in: List[{{prop._type.type.__name__ or prop._type.type or None}}] = None{% if prop._type.type.__name__ == 'str' or prop._type.type == 'str' %},
+            like: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            not_like: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            matches_regex: {{prop._type.type.__name__ or prop._type.type or None}} = None,
+            not_matches_regex: {{prop._type.type.__name__ or prop._type.type or None}} = None
+{% endif %}
+    ) -> Filter:
+        pass
+
+{% endfor %}
+
