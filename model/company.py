@@ -19,7 +19,7 @@ class CompanyFilter:
     def by_name(
             self,
             value: str = None,
-            is_not: str = None,
+            value_not: str = None,
             value_in: List[str] = None,
             not_in: List[str] = None,
             like: str = None,
@@ -33,7 +33,7 @@ class CompanyFilter:
     def by_employee_number(
             self,
             value: int = None,
-            is_not: int = None,
+            value_not: int = None,
             lt: int = None,
             lte: int = None,
             gt: int = None,
@@ -45,7 +45,7 @@ class CompanyFilter:
 
     @property
     def located_at(self):
-        return EdgeFilterGenerator(col.LOCATED_AT, self, CompanyEdgeFilter)
+        return col.LOCATED_AT.edge_filter_generator(col.LOCATED_AT, self, CompanyEdgeFilter)
 
 
 class CompanyEdgeFilter(EdgeFilter, CompanyFilter):
@@ -66,7 +66,7 @@ class CompanyDocument(Document):
     def by_name(
             cls,
             value: str = None,
-            is_not: str = None,
+            value_not: str = None,
             value_in: List[str] = None,
             not_in: List[str] = None,
             like: str = None,
@@ -81,7 +81,7 @@ class CompanyDocument(Document):
     def by_employee_number(
             cls,
             value: int = None,
-            is_not: int = None,
+            value_not: int = None,
             lt: int = None,
             lte: int = None,
             gt: int = None,
@@ -93,10 +93,11 @@ class CompanyDocument(Document):
 
     @classproperty
     def located_at(cls):
-        return EdgeFilterGenerator(col.LOCATED_AT, cls, CompanyEdgeFilter)
+        return col.LOCATED_AT.edge_filter_generator(col.LOCATED_AT, cls, CompanyEdgeFilter)
 
     def filter_by(self, prefix: str = 'p', depth: int = 0) -> Tuple[str, Dict[str, Any]]:
         return CompanyAttributeFilter(self.get_collection(), None, '_key', '==', self._key).filter_by(prefix, depth)
+
 
 @dataclass
 class Company(CompanyDocument):

@@ -23,7 +23,7 @@ class EdgeFilter(Filter):
     def filter_by(self, prefix: str = 'p', depth: int = 0) -> Tuple[str, Dict[str, Any]]:
         outbound_entities_query, outbound_parameters = self.outbound_item.filter_by('l' + prefix, depth+1)
 
-        if self.item is None:
+        if self.item is None or not inspect.isclass(self.item):
             return f'''
             let outbound_entities = ({outbound_entities_query})
             for outbound_entity in outbound_entities

@@ -10,5 +10,6 @@ class Collection(ABC):
 
 @dataclass
 class EdgeCollection(Collection):
+    edge_filter_generator = None
     from_collection: Collection
     to_collection: Collection

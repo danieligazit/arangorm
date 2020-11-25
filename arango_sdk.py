@@ -1,10 +1,10 @@
 from datetime import datetime
-from typing import List
+from typing import List, Union, Dict
 
 from arango import ArangoClient
 from collection import Collection, EdgeCollection
 from aql_filter import Filter, EdgeFilterGenerator
-from document import Document
+from document import Document, Edge
 
 from model import Country, Company, LocatedAt
 
@@ -38,14 +38,10 @@ class DB:
         return self.db[collection.name]
 
     def _get_query_results(self, filter_item: Filter):
+        document_type = filter_item.get_collection().document_type
         query, params = filter_item.filter_by()
+        load_function = document_type._load
 
-        if isinstance(filter_item, EdgeFilterGenerator):
-            load_function = filter_item.edge.document_type._load
-        else:
-            load_function = filter_item.collection_from.document_type._load
-
-        print(query, params )
         return map(load_function, self.db.aql.execute(query, bind_vars=params))
 
     def count(self, filter_item: Filter):
@@ -60,9 +56,11 @@ class DB:
 
     def add(self, document: Document):
         cursor = self.ensure_collection(document.get_collection())
-        cursor.insert(document._dump())
+        result = cursor.insert(document._dump())
+        document._set_meta(**result)
+        return document
 
-    def set(self, from_filter, to_filter, edge_document = None):
+    def set(self, from_filter: Union[Filter, Document], to_filter: Union[Filter, Document], edge_document: Union[Dict, Edge] = None):
         if edge_document and isinstance(from_filter.item, Document) and isinstance(to_filter, Document):
             return self._set_from_objects(from_filter, to_filter, edge_document)
 
@@ -80,7 +78,7 @@ class DB:
         '''
 
         from_params.update(to_params)
-        print(statement, from_params)
+
         self.db.aql.execute(statement, bind_vars=to_params)
 
     def _set_from_filter(self):
@@ -101,12 +99,18 @@ class DB:
 if __name__ == '__main__':
     db = DB(username='root', password='')
 
-    zirra = db.get(Company.by_name('zirra'))
-    italy = db.get(Country.by_abbreviation('IL'))
+    # israel = db.get(Country.by_abbreviation('IL'))
 
-    # db.set(zirra.located_at, italy, LocatedAt(**{'since': datetime.now(), 'until': datetime.now()}))
+    # us = db.add(Country(name='United States of America', abbreviation='US'))
 
-    print(db.get(zirra.located_at))
+    # db.set(zirra.located_at, us, LocatedAt(**{'since': datetime.now(), 'until': datetime.now()}))
+
+    query = Company.by_name('zirra').located_at(
+        Country.by_name(like='%America')
+    ).located_at.by_since(value_not='some')
+
+    print(query.filter_by())
+    print(db.get(query))
 
 
     # db.set()
@@ -118,21 +122,3 @@ if __name__ == '__main__':
     #
     # start = datetime.now()
     #
-
-    #
-    # db.add(Company(name='zirra'))
-    #
-    # db.add(Person(name='Feriha Ibriyamova'))
-    # db.add(Person(name='Daniel Gazit'))
-    #
-    # db.set(Person.by_name('Feriha Ibriyamova').works_at, Company.by_name('zirra'))
-    # db.set(Person.by_name('Daniel Gazit').works_at, Company.by_name('zirra'))
-    #
-    #
-    #
-    # person = db.get(Person.works_at(Company.by_name('zirra')).by_name(like='%Feriha%'))
-    #
-    # print(person.name)  # Feriha Ibriyamova
-    #
-    # elapsed = datetime.now() - start
-    # print(elapsed)  # 0:00:00.009002 (9 ms)
