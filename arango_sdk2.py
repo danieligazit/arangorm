@@ -38,8 +38,7 @@ class DB:
         return self.db[collection.name]
 
     def _get_query_results(self, filter_item: Filter):
-        document_type = filter_item.get_collection().document_type
-        query, params = filter_item.filter_by()
+        query =
         load_function = document_type._load
 
         return map(load_function, self.db.aql.execute(query, bind_vars=params))

@@ -5,6 +5,7 @@ from typing import Any, List, Type, Tuple, Dict, TypeVar, Generic
 from collection import Collection, EdgeCollection
 from document import Document
 
+
 @dataclass
 class Filter(ABC):
     collection_from: Collection
