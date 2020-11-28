@@ -1,10 +1,12 @@
 from abc import abstractmethod, ABC
 from datetime import datetime
-from typing import List
+from typing import List, Generic, TypeVar
 
-from collection import Collection
+from collection import EdgeCollection
 
 DEFAULT_DUMP_KEYS = ['_key', '_id', '_rev']
+
+T = TypeVar('T', bound='Collection')
 
 
 class Document(ABC):
@@ -13,12 +15,13 @@ class Document(ABC):
         self._rev = _rev
         self._id = _id
 
+    @classmethod
     @abstractmethod
-    def get_collection(self) -> Collection:
+    def get_collection(cls) -> T:
         pass
 
     @classmethod
-    def _load(cls, d: dict) -> 'Document':
+    def _load(cls, d: dict) -> T:
         return cls(**d)
 
     def _dump(self) -> dict:
@@ -55,6 +58,11 @@ class Edge(Document):
 
     def _dump(self) -> dict:
         return self._dump_from_dict(vars(self), keys=['_key', '_id', '_rev', '_from', '_to'])
+
+    @classmethod
+    @abstractmethod
+    def get_collection(cls) -> 'EdgeCollection':
+        pass
 
     # def _set_meta(self, _id: str, _key: str, _rev: str, _from: str = None, _to = None, _to: str):
     #     super()._set_meta(_id, _key, _rev)

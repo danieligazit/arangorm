@@ -47,8 +47,8 @@ class DB:
         query, params = filter_item.filter_by()
         return self.db.aql.execute(query, bind_vars=params, count=True).count()
 
-    def get(self, filter_item):
         return next(self._get_query_results(filter_item), None)
+    def get(self, filter_item):
 
     def get_many(self, filter_item):
         return list(self._get_query_results(filter_item))
