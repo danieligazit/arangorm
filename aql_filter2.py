@@ -75,7 +75,7 @@ class Returns:
         self.attribute_return = '.' + attr
         return self
 
-
+@dataclass
 class Aliased:
     aliases: List[str]
 
@@ -132,7 +132,7 @@ class Query(ABC, Returns, Aliased):
 
         return Group(query=self, display_field_to_grouped=display_field_to_grouped, matchers=[])
 
-    def select(self, *fields: Union[str, 'Field', Type[Document], Type[object]],
+    def select(self, *fields: Union[str, 'Field', Type[Document], Type[object], 'Var'],
                **field_to_display_to_field: Union[str, 'Selected', Type[Document], Type[object]]) -> 'Select':
 
         if len(fields) == 0 and len(field_to_display_to_field) == 0:
@@ -144,6 +144,9 @@ class Query(ABC, Returns, Aliased):
             if isinstance(field, Field):
                 display_field_to_grouped[field.field] = field
                 continue
+
+            if isinstance(field, Var):
+                display_field_to_grouped[field.name] = field
 
             display_field_to_grouped[field.__name__ if isclass(field) else str(field)] = Field(field=field)
 
@@ -295,6 +298,9 @@ class Select(Query, Selected):
     by_fields: List[str] = dataclass_field(default_factory=list)
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
+        if not alias_to_result:
+            alias_to_result = {}
+
         stmt = self.query._to_stmt(f'{prefix}_0')
         alias_to_result.update(stmt.alias_to_result)
         previous, bind_vars = stmt.expand_without_return()
@@ -307,7 +313,7 @@ class Select(Query, Selected):
             if isinstance(group_field, Field) and group_field.field in self.by_fields:
                 group_field.used_in_by = True
 
-            group_stmt = group_field._to_select_stmt(f'{prefix}_{bind_vars_index}', stmt.returns,
+            group_stmt = group_field._to_select_stmt(prefix=f'{prefix}_{bind_vars_index}', relative_to=stmt.returns,
                                                      alias_to_result=alias_to_result)
             alias_to_result.update(alias_to_result)
             group_str, b_vars = group_stmt.expand()
@@ -352,19 +358,18 @@ class EdgeQuery(Query, Filter, Grouped, Selected):
 
         if self.previous_query:
             previous_stmt = self.previous_query._to_stmt(prefix=f'{prefix}_0', alias_to_result=alias_to_result)
-            alias_to_result.update(previous_stmt.alias_to_result)
             previous_str, previous_vars = previous_stmt.expand()
             bind_vars.update(previous_vars)
             return Stmt(f'''
                 {previous_str}
                     FOR v, e IN 1..1 {self.direction} {previous_stmt.returns}._id {traversal_edge_collection_names(self.edge_collections)}
                         {step_stmts}
-                ''', bind_vars, returns='e' + self.attribute_return, result=result)
+                ''', bind_vars, returns='e' + self.attribute_return, result=result, aliases=self.aliases)
 
         return Stmt(f'''
             FOR v, e IN 1..1 {self.direction} {relative_to}._id {traversal_edge_collection_names(self.edge_collections)}
                 {step_stmts}
-        ''', bind_vars, returns='e' + self.attribute_return, result=result)
+        ''', bind_vars, returns='e' + self.attribute_return, result=result, aliases=self.aliases)
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
         return self._get_traversal_stmt(prefix, alias_to_result=alias_to_result)
@@ -389,6 +394,7 @@ class EdgeQuery(Query, Filter, Grouped, Selected):
         '''
 
         traversal_stmt.result = ListResult(AnyResult([e.document_type for e in self.edge_collections]))
+
         return traversal_stmt
 
     def _to_select_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result]) -> Stmt:
@@ -674,8 +680,7 @@ def var(expression: str):
 
 
 def main():
-    query = Company.match().as_var('a').out(LocatedIn).as_var('b').select(a_object=var('a'), b_object=var(
-        'b'))  # .select(Document, countries_that_we_should_expand_to=Country.match(lead_industry=var('a').industry).name)
+    query = Company.match().as_var('a').select(var('a')) #.out(LocatedIn).as_var('b').select(a_object=var('a'), b_object=var('b'))  # .select(Document, countries_that_we_should_expand_to=Country.match(lead_industry=var('a').industry).name)
 
     client = ArangoClient()
     db = client.db('test', username='root', password='')
