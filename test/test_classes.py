@@ -91,4 +91,3 @@ class Country(Document):
 
 
 COUNTRY_COLLECTION.document_type = Country
-print(LocatedIn.get_collection())

@@ -21,8 +21,8 @@ class Filter(ABC):
 
 @dataclass
 class Returns:
-    attribute_return: str
-    attribute_return_list: List[str]
+    attribute_return: str = dataclass_field(default='', init=False)
+    attribute_return_list: List[str] = dataclass_field(default='', init=False)
 
     def _get_result(self, result: Result) -> Result:
         for attribute in self.attribute_return_list:
@@ -38,7 +38,7 @@ class Returns:
 
 @dataclass
 class Aliased:
-    aliases: List[str]
+    aliases: List[str] = dataclass_field(default_factory=list, init=False)
 
     def as_var(self, variable: str) -> Q:
         self.aliases.append(variable)
@@ -47,7 +47,7 @@ class Aliased:
 
 @dataclass
 class Query(ABC, Returns, Aliased):
-    matchers: List[Filter]
+    matchers: List[Filter] = dataclass_field(default_factory=list, init=False)
 
     @abstractmethod
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
@@ -86,7 +86,11 @@ class Query(ABC, Returns, Aliased):
                 display_field_to_grouped[field.name] = field
                 continue
 
-            display_field_to_grouped[field.__name__ if isclass(field) else str(field)] = Field(field=field, aliases=[])
+            if isinstance(field, Grouped):
+                display_field_to_grouped[str(field)] = field
+                continue
+
+            display_field_to_grouped['document' if isclass(field) else str(field)] = Field(field=field)
 
         for display_field, field in field_to_display_to_field.items():
             if isinstance(field, Grouped):
@@ -95,8 +99,7 @@ class Query(ABC, Returns, Aliased):
 
             display_field_to_grouped[display_field] = Field(field=field)
 
-        return Group(query=self, display_field_to_grouped=display_field_to_grouped, matchers=[], aliases=self.aliases,
-                     attribute_return='', attribute_return_list=[])
+        return Group(query=self, display_field_to_grouped=display_field_to_grouped)
 
     def select(self, *fields: Union[str, 'Field', Type['Document'], Type[object], 'Var'],
                **field_to_display_to_field: Union[str, 'Selected', Type['Document'], Type[object]]) -> 'Select':
@@ -115,7 +118,7 @@ class Query(ABC, Returns, Aliased):
                 display_field_to_grouped[field.name] = field
                 continue
 
-            display_field_to_grouped[field.__name__ if isclass(field) else str(field)] = Field(field=field, aliases=[])
+            display_field_to_grouped[field.__name__ if isclass(field) else str(field)] = Field(field=field)
 
         for display_field, field in field_to_display_to_field.items():
             if isinstance(field, Selected):
@@ -124,8 +127,7 @@ class Query(ABC, Returns, Aliased):
 
             display_field_to_grouped[display_field] = Field(field=field)
 
-        return Select(query=self, display_field_to_grouped=display_field_to_grouped, matchers=[], aliases=self.aliases,
-                      attribute_return='', attribute_return_list=[])
+        return Select(query=self, display_field_to_grouped=display_field_to_grouped)
 
     def _get_step_stmts(self, relative_to: str, prefix: str, returns: str, bind_vars: Dict[str, Any] = None,
                         bind_vars_index: int = 0) -> Tuple[str, Dict[str, Any], int]:
@@ -147,14 +149,7 @@ class Query(ABC, Returns, Aliased):
         return DELIMITER.join(step_stmts), bind_vars, bind_vars_index
 
     def array(self, inner_query: 'InnerQuery') -> 'Array':
-        return Array(
-            attribute_return='',
-            attribute_return_list=[],
-            outer_query=self,
-            matchers=[],
-            aliases=[],
-            inner_query=inner_query
-        )
+        return Array(outer_query=self, inner_query=inner_query)
 
 
 def traversal_edge_collection_names(edge_collections: List[EdgeCollection]) -> str:
@@ -193,6 +188,8 @@ class Aggregated(Grouped, Selected, Aliased):
         alias_to_result.update(stmt.alias_to_result)
         return Stmt(f'''{self.func}({query_str})''', bind_vars, result=VALUE_RESULT, alias_to_result=alias_to_result)
 
+    def __str__(self) -> str:
+        return f'{self.func.lower()}_{self.group}'
 
 @dataclass
 class Field(Grouped, Selected, Aliased):
@@ -200,8 +197,8 @@ class Field(Grouped, Selected, Aliased):
     used_in_by: bool = dataclass_field(default=False)
 
     def _to_group_stmt(self, prefix: str, collected: str, alias_to_result: Dict[str, Result]) -> Stmt:
-        if self.field in (object):
-            return Stmt(collected, {}, result=ListResult(DocumentResult()), alias_to_result=alias_to_result,
+        if self.field in (object,):
+            return Stmt(collected, {}, result=ListResult(DOCUMENT_RESULT), alias_to_result=alias_to_result,
                         aliases=self.aliases)
 
         if self.used_in_by:
@@ -213,18 +210,23 @@ class Field(Grouped, Selected, Aliased):
                     aliases=self.aliases)
 
     def _to_select_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result]) -> Stmt:
-        if self.field in (Document, object):
-            return Stmt(relative_to, {}, result=DocumentResult(), aliases=self.aliases, alias_to_result=alias_to_result)
+        if self.field in (object,):
+            return Stmt(relative_to, {}, result=DOCUMENT_RESULT, aliases=self.aliases, alias_to_result=alias_to_result)
 
         return Stmt(f'''{relative_to}.{self.field}''', {}, result=VALUE_RESULT, alias_to_result=alias_to_result,
                     aliases=self.aliases)
 
+    def __str__(self) -> str:
+        return str(self.field)
 
 @dataclass
 class Group(Query):
     query: Query
     display_field_to_grouped: Dict[str, Grouped] = dataclass_field(default_factory=dict)
     by_fields: List[str] = dataclass_field(default_factory=list)
+
+    def __post_init__(self):
+        self.aliases = self.query.aliases
 
     def by(self, *fields: str) -> 'Group':
         for field in fields:
@@ -260,6 +262,8 @@ class Group(Query):
 
         result = {}
         for display_field, group_field in self.display_field_to_grouped.items():
+            print(display_field, group_field)
+
             if isinstance(group_field, Field) and group_field.field in self.by_fields:
                 group_field.used_in_by = True
 
@@ -289,6 +293,9 @@ class Select(Query, Selected):
     query: Query
     display_field_to_grouped: Dict[str, Grouped] = dataclass_field(default_factory=dict)
     by_fields: List[str] = dataclass_field(default_factory=list)
+
+    def __post_init__(self):
+        self.aliases = self.query.aliases
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
         if not alias_to_result:
@@ -368,11 +375,7 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
     def to(self, *target_collection_types: Type['Document']):
         return EdgeTargetQuery(
             outer_query_returns='',
-            aliases=[],
-            attribute_return='',
-            attribute_return_list=[],
             outer_query=self,
-            matchers=[],
             target_collections=[t.get_collection() for t in target_collection_types],
             direction=self.direction,
         )
@@ -381,7 +384,8 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
         if not alias_to_result:
             alias_to_result = {}
 
-        result = self._get_result(AnyResult([e.document_type for e in self.edge_collections])) if self.edge_collections else DOCUMENT_RESULT
+        result = self._get_result(
+            AnyResult([e.document_type for e in self.edge_collections])) if self.edge_collections else DOCUMENT_RESULT
         step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=f'{prefix}_e',
                                                                       returns=f'{prefix}_e' + self.attribute_return,
                                                                       prefix=prefix)
@@ -443,11 +447,7 @@ class DocumentQuery(Query, Selected):
     def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
-            matchers=[],
-            attribute_return='',
-            aliases=[],
             direction='OUTBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -457,11 +457,7 @@ class DocumentQuery(Query, Selected):
     def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
-            matchers=[],
-            attribute_return='',
-            aliases=[],
             direction='INBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -471,11 +467,7 @@ class DocumentQuery(Query, Selected):
     def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
         return EdgeQuery(
             outer_query_returns='',
-            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
-            matchers=[],
-            attribute_return='',
-            aliases=[],
             direction='ANY',
             outer_query=self,
             min_depth=min_depth,
@@ -548,11 +540,7 @@ class EdgeTargetQuery(InnerQuery):
     def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
-            matchers=[],
-            attribute_return='',
-            aliases=[],
             direction='OUTBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -562,11 +550,7 @@ class EdgeTargetQuery(InnerQuery):
     def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
-            matchers=[],
-            attribute_return='',
-            aliases=[],
             direction='INBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -576,11 +560,7 @@ class EdgeTargetQuery(InnerQuery):
     def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
         return EdgeQuery(
             outer_query_returns='',
-            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
-            matchers=[],
-            attribute_return='',
-            aliases=[],
             direction='ANY',
             outer_query=self,
             min_depth=min_depth,
@@ -588,27 +568,29 @@ class EdgeTargetQuery(InnerQuery):
         )
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
-        return self._get_traversal_stmt(prefix=prefix, relative_to=self.outer_query_returns, index=1,
-                                                  alias_to_result=alias_to_result)
-
-    def _get_traversal_stmt(self, prefix: str = 'p', relative_to: str = None, index: int = 0,
-                            alias_to_result: Dict[str, Result] = None) -> Stmt:
         if not alias_to_result:
             alias_to_result = {}
 
         returns = f'{prefix}_v'
-        result = self._get_result(AnyResult([t.document_type for t in self.target_collections])) if len(self.target_collections) > 0 else DOCUMENT_RESULT
-
-        filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
+        relative_to = returns
+        result = self._get_result(AnyResult([t.document_type for t in self.target_collections])) if len(
+            self.target_collections) > 0 else DOCUMENT_RESULT
 
         step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
                                                                       returns=returns + self.attribute_return,
-                                                                      prefix=prefix, bind_vars_index=index)
+                                                                      prefix=prefix, bind_vars_index=1)
+
+        filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
 
         if self.outer_query:
+
             edge_query = self.outer_query
 
             previous_str = ''
+
+            outer_query_step_stmts, bind_vars, bind_vars_index = self.outer_query._get_step_stmts(
+                relative_to=f'{prefix}_e', bind_vars=bind_vars, bind_vars_index=bind_vars_index,
+                prefix=f'{prefix}', returns=f'{prefix}_e' + self.outer_query.attribute_return)
 
             if self.outer_query.outer_query:
                 previous_stmt = self.outer_query.outer_query._to_stmt(f'{prefix}_0', alias_to_result=alias_to_result)
@@ -617,35 +599,78 @@ class EdgeTargetQuery(InnerQuery):
                 bind_vars.update(previous_bind_vars)
                 relative_to = previous_stmt.returns
 
-            outer_query_step_stmts, bind_vars, bind_vars_index = self.outer_query._get_step_stmts(
-                relative_to=f'{prefix}_e', bind_vars=bind_vars, bind_vars_index=bind_vars_index,
-                prefix=f'{prefix}', returns=f'{prefix}_e' + self.outer_query.attribute_return)
-
             return Stmt(f'''
             {previous_str}
             FOR {prefix}_v, {prefix}_e IN {self.outer_query.min_depth}..{self.outer_query.max_depth} {edge_query.direction} {relative_to}._id {",".join([e.name for e in edge_query.edge_collections]) if edge_query.edge_collections else ""}
                 {filter_target_collection}
                 {step_stmts}
                 {outer_query_step_stmts}
-            ''', bind_vars, alias_to_result=alias_to_result, returns=returns+self.attribute_return,
+            ''', bind_vars, alias_to_result=alias_to_result, returns=returns + self.attribute_return,
                         result=result)
 
         return Stmt(f'''
-            {DELIMITER.join(step_stmts)}
+            {filter_target_collection}
+            {step_stmts}
         ''', bind_vars, alias_to_result=alias_to_result, result=result,
-                    returns=returns+self.attribute_return)
+                    returns=returns + self.attribute_return)
 
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
-        traversal_stmt, bind_vars = self._get_traversal_stmt(prefix=prefix,
-                                                             relative_to=relative_to).expand_without_return()
+
+        relative_to = relative_to[:-1] + 'v' if relative_to.endswith('e') else relative_to
+        returns = f'{prefix}_v'
+
+        if self.outer_query:
+            edge_query = self.outer_query
+            filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
+            previous_str = ''
+
+            if self.outer_query.outer_query:
+                filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {relative_to})" for t in self.target_collections])}''' if self.target_collections else ''
+
+                step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=relative_to,
+                                                                              returns=returns + self.attribute_return,
+                                                                              prefix=prefix, bind_vars_index=0)
+
+                previous_stmt = self.outer_query.outer_query._to_stmt(f'{prefix}_0')
+                previous_str, previous_bind_vars = previous_stmt.expand_without_return()
+                bind_vars.update(previous_bind_vars)
+                relative_to = previous_stmt.returns
+
+            else:
+                step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
+                                                                              returns=returns + self.attribute_return,
+                                                                              prefix=prefix, bind_vars_index=0)
+
+            outer_query_step_stmts, bind_vars, bind_vars_index = self.outer_query._get_step_stmts(
+                relative_to=f'{prefix}_e', bind_vars=bind_vars, bind_vars_index=bind_vars_index,
+                prefix=f'{prefix}', returns=f'{prefix}_e' + self.outer_query.attribute_return)
+
+            return Stmt(f'''
+            LET {prefix}_sub = (
+                {previous_str}
+                FOR {prefix}_v, {prefix}_e IN {self.outer_query.min_depth}..{self.outer_query.max_depth} {edge_query.direction} {relative_to}._id {",".join([e.name for e in edge_query.edge_collections]) if edge_query.edge_collections else ""}
+                    {filter_target_collection}
+                    {step_stmts}
+                    {outer_query_step_stmts}
+                    RETURN 1
+            )
+            FILTER LENGTH({prefix}_sub) > 0
+            ''', bind_vars)
+
+        filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {relative_to})" for t in self.target_collections])}''' if self.target_collections else ''
+
+        step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=relative_to,
+                                                                      returns=returns + self.attribute_return,
+                                                                      prefix=prefix, bind_vars_index=0)
 
         return Stmt(f'''
-        LET {prefix}_sub = (
-            {traversal_stmt}
-            RETURN 1
-        )
-
-        FILTER LENGTH({prefix}_sub) > 0
+            LET {prefix}_sub = (
+                {filter_target_collection}
+                {step_stmts}
+                RETURN 1
+            )
+            FILTER LENGTH({prefix}_sub) > 0
+            
         ''', bind_vars)
 
 
@@ -682,7 +707,7 @@ class Array(Query):
                                                                       prefix=prefix, bind_vars_index=1)
 
         self.inner_query.outer_query_returns = f'oqr_{prefix}'
-        # if isinstance(self.inner_query)
+
         outer_stmt = self.outer_query._to_stmt(f'{prefix}_0', alias_to_result=alias_to_result)
         alias_to_result.update(outer_stmt.alias_to_result)
         outer_str, outer_bind_vars = outer_stmt.expand_without_return()
@@ -721,10 +746,6 @@ def out(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: 
     return EdgeQuery(
         outer_query_returns='',
         edge_collections=[e.get_collection() for e in edge_collection_types],
-        attribute_return='',
-        attribute_return_list=[],
-        aliases=[],
-        matchers=[],
         direction='OUTBOUND',
         outer_query=None,
         min_depth=min_depth,
@@ -736,10 +757,6 @@ def inbound(*edge_collection_types: Type['Edge'], min_depth: int = None, max_dep
     return EdgeQuery(
         outer_query_returns='',
         edge_collections=[e.get_collection() for e in edge_collection_types],
-        attribute_return='',
-        attribute_return_list=[],
-        aliases=[],
-        matchers=[],
         direction='INBOUND',
         outer_query=None,
         min_depth=min_depth,
@@ -751,10 +768,6 @@ def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None, ma
     return EdgeQuery(
         outer_query_returns='',
         edge_collections=[e.get_collection() for e in edge_collection_types],
-        attribute_return='',
-        attribute_return_list=[],
-        aliases=[],
-        matchers=[],
         direction='ANY',
         outer_query=None,
         min_depth=min_depth,
@@ -765,10 +778,6 @@ def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None, ma
 def to(*collection_types: Type['Document']) -> EdgeTargetQuery:
     return EdgeTargetQuery(
         target_collections=[c.get_collection() for c in collection_types],
-        aliases=[],
-        matchers=[],
-        attribute_return='',
-        attribute_return_list=[],
         outer_query=None,
         outer_query_returns='',
         direction='OUTBOUND'
@@ -801,10 +810,8 @@ class Var(Selected, Returns, Grouped):
 
 
 def var(expression: str):
-    v = Var(name=expression, attribute_return=expression, attribute_return_list=[])
+    v = Var(name=expression)
     return v
-
-
 
 # def main():
 #     query = Company.match().as_var('a').match(some='value').out(LocatedIn).to(Country) \
