@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import List, Generic, TypeVar
 
 from collection import EdgeCollection
+from query import DocumentQuery
 
 DEFAULT_DUMP_KEYS = ['_key', '_id', '_rev']
 
@@ -49,6 +50,18 @@ class Document(ABC):
     def __repr__(self) -> str:
         return f'{type(self)}{vars(self)}'
 
+    @classmethod
+    def match(cls, *matchers, **key_value_match):
+        dq = DocumentQuery(
+            attribute_return_list=[],
+            aliases=[],
+            matchers=[],
+            attribute_return='',
+            collection=cls.get_collection(),
+        )
+
+        dq.match(*matchers, **key_value_match)
+        return dq
 
 class Edge(Document):
     def __init__(self, _key=None, _rev=None, _id=None, _from=None, _to=None):

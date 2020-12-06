@@ -1,82 +1,16 @@
-import json
 from abc import ABC, abstractmethod
-from datetime import datetime
 from dataclasses import dataclass, field as dataclass_field
 from inspect import isclass
 from typing import Any, List, Type, Dict, Tuple, TypeVar, Union
 
-from arango import ArangoClient
-
-from document import Edge, Document
 from collection import Collection, EdgeCollection
-import model.collection_definition as col
+from result import ListResult, DictResult, AnyResult, Result, VALUE_RESULT, DOCUMENT_RESULT
+from stmt import Stmt
 
 DELIMITER = '\n'
 
 Q = TypeVar('Q', bound='Query')
 R = TypeVar('R', bound='Returns')
-
-
-@dataclass
-class Result:
-    pass
-
-
-@dataclass
-class ValueResult(Result):
-    pass
-
-
-@dataclass
-class ListResult(Result):
-    inner_result: Result
-
-
-@dataclass
-class AnyResult(Result):
-    inner_result: List[Result]
-
-
-@dataclass
-class DocumentResult(Result):
-    pass
-
-    def __getitem__(self, _item):
-        return VALUE
-
-
-@dataclass
-class DictResult(Result):
-    display_name_to_result: Dict[str, Result]
-
-    def __getitem__(self, item):
-        return self.display_name_to_result[item]
-
-
-VALUE = ValueResult()
-DOCUMENT_RESULT = DocumentResult()
-
-
-@dataclass
-class Stmt:
-    query_str: str
-    bind_vars: Dict[str, Any]
-    aliases: List[str] = dataclass_field(default_factory=list)
-    returns: str = dataclass_field(default=None)
-    result: Any = dataclass_field(default=None)
-    alias_to_result: Dict[str, Result] = dataclass_field(default_factory=dict)
-
-    def __post_init__(self):
-        for alias in self.aliases:
-            self.alias_to_result[alias] = self.result
-
-    def expand(self) -> Tuple[str, Dict[str, Any]]:
-        if not self.returns:
-            return self.expand_without_return()
-        return self.query_str + f' RETURN {self.returns}', self.bind_vars
-
-    def expand_without_return(self) -> Tuple[str, Dict[str, Any]]:
-        return self.query_str, self.bind_vars
 
 
 class Filter(ABC):
@@ -135,8 +69,8 @@ class Query(ABC, Returns, Aliased):
         # TODO
         raise ValueError
 
-    def group(self, *fields: Union[str, 'Field', Type[Document], Type[object], 'Var'],
-              **field_to_display_to_field: Union[str, 'Grouped', Type[Document], Type[object], 'Var']) -> 'Group':
+    def group(self, *fields: Union[str, 'Field', Type['Document'], Type[object], 'Var'],
+              **field_to_display_to_field: Union[str, 'Grouped', Type['Document'], Type[object], 'Var']) -> 'Group':
 
         if len(fields) == 0 and len(field_to_display_to_field) == 0:
             fields = [object]
@@ -164,8 +98,8 @@ class Query(ABC, Returns, Aliased):
         return Group(query=self, display_field_to_grouped=display_field_to_grouped, matchers=[], aliases=self.aliases,
                      attribute_return='', attribute_return_list=[])
 
-    def select(self, *fields: Union[str, 'Field', Type[Document], Type[object], 'Var'],
-               **field_to_display_to_field: Union[str, 'Selected', Type[Document], Type[object]]) -> 'Select':
+    def select(self, *fields: Union[str, 'Field', Type['Document'], Type[object], 'Var'],
+               **field_to_display_to_field: Union[str, 'Selected', Type['Document'], Type[object]]) -> 'Select':
 
         if len(fields) == 0 and len(field_to_display_to_field) == 0:
             fields = [object]
@@ -202,7 +136,7 @@ class Query(ABC, Returns, Aliased):
 
         for matcher in self.matchers:
             query_stmt, matcher_vars = matcher._to_filter_stmt(prefix=f'{prefix}_{bind_vars_index}',
-                                                               relative_to=relative_to).expand()
+                                                               relative_to=relative_to).expand_without_return()
             step_stmts.append(query_stmt)
             bind_vars.update(matcher_vars)
             bind_vars_index += len(matcher_vars)
@@ -250,37 +184,39 @@ class Aggregated(Grouped, Selected, Aliased):
         stmt = self.group._to_group_stmt(prefix, collected=collected, alias_to_result=alias_to_result)
         query_str, bind_vars = stmt.expand()
         alias_to_result.update(stmt.alias_to_result)
-        return Stmt(f'''{self.func}({query_str})''', bind_vars, result=VALUE, aliases=self.aliases,
+        return Stmt(f'''{self.func}({query_str})''', bind_vars, result=VALUE_RESULT, aliases=self.aliases,
                     alias_to_result=alias_to_result)
 
     def _to_select_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result]) -> Stmt:
         stmt = self.group._to_select_stmt(prefix, relative_to=relative_to, alias_to_result=alias_to_result)
         query_str, bind_vars = stmt.expand()
         alias_to_result.update(stmt.alias_to_result)
-        return Stmt(f'''{self.func}({query_str})''', bind_vars, result=VALUE, alias_to_result=alias_to_result)
+        return Stmt(f'''{self.func}({query_str})''', bind_vars, result=VALUE_RESULT, alias_to_result=alias_to_result)
 
 
 @dataclass
 class Field(Grouped, Selected, Aliased):
-    field: Union[str, Type[Document], Type[object]]
+    field: Union[str, Type['Document'], Type[object]]
     used_in_by: bool = dataclass_field(default=False)
 
     def _to_group_stmt(self, prefix: str, collected: str, alias_to_result: Dict[str, Result]) -> Stmt:
-        if self.field in (Document, object):
+        if self.field in (object):
             return Stmt(collected, {}, result=ListResult(DocumentResult()), alias_to_result=alias_to_result,
                         aliases=self.aliases)
 
         if self.used_in_by:
-            return Stmt(f'field_{self.field}', {}, result=VALUE, alias_to_result=alias_to_result, aliases=self.aliases)
+            return Stmt(f'field_{self.field}', {}, result=VALUE_RESULT, alias_to_result=alias_to_result,
+                        aliases=self.aliases)
 
-        return Stmt(f'''{collected}[*].{self.field}''', {}, result=ListResult(VALUE), alias_to_result=alias_to_result,
+        return Stmt(f'''{collected}[*].{self.field}''', {}, result=ListResult(VALUE_RESULT),
+                    alias_to_result=alias_to_result,
                     aliases=self.aliases)
 
     def _to_select_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result]) -> Stmt:
         if self.field in (Document, object):
             return Stmt(relative_to, {}, result=DocumentResult(), aliases=self.aliases, alias_to_result=alias_to_result)
 
-        return Stmt(f'''{relative_to}.{self.field}''', {}, result=VALUE, alias_to_result=alias_to_result,
+        return Stmt(f'''{relative_to}.{self.field}''', {}, result=VALUE_RESULT, alias_to_result=alias_to_result,
                     aliases=self.aliases)
 
 
@@ -415,9 +351,21 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
     edge_collections: List[EdgeCollection]
     outer_query: Query
     direction: str
-    traversal_prefix: dataclass_field(default='')
+    min_depth: int = dataclass_field(default=1)
+    max_depth: int = dataclass_field(default=1)
 
-    def to(self, *target_collection_types: Type[Document]):
+    def __post_init__(self):
+        if self.max_depth is None:
+            if self.min_depth is None:
+                self.min_depth, self.max_depth = 1, 1
+                return
+            self.max_depth = self.min_depth
+            return
+
+        if self.min_depth is None:
+            self.min_depth = 1
+
+    def to(self, *target_collection_types: Type['Document']):
         return EdgeTargetQuery(
             outer_query_returns='',
             aliases=[],
@@ -427,16 +375,15 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
             matchers=[],
             target_collections=[t.get_collection() for t in target_collection_types],
             direction=self.direction,
-            traversal_prefix=self.traversal_prefix + '_t'
         )
 
     def _get_traversal_stmt(self, prefix: str, relative_to: str = '', alias_to_result: Dict[str, Result] = None):
         if not alias_to_result:
             alias_to_result = {}
 
-        result = self._get_result(AnyResult([e.document_type for e in self.edge_collections]))
-        step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=f'{self.traversal_prefix}_e',
-                                                                      returns=f'{self.traversal_prefix}_e' + self.attribute_return,
+        result = self._get_result(AnyResult([e.document_type for e in self.edge_collections])) if self.edge_collections else DOCUMENT_RESULT
+        step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=f'{prefix}_e',
+                                                                      returns=f'{prefix}_e' + self.attribute_return,
                                                                       prefix=prefix)
 
         if self.outer_query:
@@ -447,30 +394,28 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
 
             return Stmt(f'''
                 {previous_str}
-                    FOR {self.traversal_prefix}_v, {self.traversal_prefix}_e IN 1..1 {self.direction} {previous_stmt.returns}._id {traversal_edge_collection_names(self.edge_collections)}
+                    FOR {prefix}_v, {prefix}_e IN {self.min_depth}..{self.max_depth} {self.direction} {previous_stmt.returns}._id {traversal_edge_collection_names(self.edge_collections)}
                         {step_stmts}
-                ''', bind_vars, returns=f'{self.traversal_prefix}_e' + self.attribute_return, result=result,
-                        aliases=self.aliases,
+                ''', bind_vars, returns=f'{prefix}_e' + self.attribute_return, result=result, aliases=self.aliases,
                         alias_to_result=alias_to_result)
 
         return Stmt(f'''
-            FOR {self.traversal_prefix}_v, {self.traversal_prefix}_e IN 1..1 {self.direction} {relative_to}._id {traversal_edge_collection_names(self.edge_collections)}
+            FOR {prefix}_v, {prefix}_e IN {self.min_depth}..{self.max_depth} {self.direction} {relative_to}._id {traversal_edge_collection_names(self.edge_collections)}
                 {step_stmts}
-        ''', bind_vars, returns=f'{self.traversal_prefix}_e' + self.attribute_return, result=result,
-                    aliases=self.aliases)
+        ''', bind_vars, returns=f'{prefix}_e' + self.attribute_return, result=result, aliases=self.aliases)
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
         return self._get_traversal_stmt(prefix, alias_to_result=alias_to_result, relative_to=self.outer_query_returns)
 
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
-        traversal_stmt = self._get_traversal_stmt(prefix)
-
+        traversal_stmt = self._get_traversal_stmt(prefix, relative_to=relative_to)
         traversal_stmt.query_str = f'''
-            let sub = (
+            LET {prefix}_sub = (
                 {traversal_stmt.query_str}
+                RETURN 1
             )
-
-            FILTER LENGTH(sub) > 0'''
+    
+            FILTER LENGTH({prefix}_sub) > 0'''
         return traversal_stmt
 
     def _to_group_stmt(self, prefix: str, collected: str, alias_to_result: Dict[str, Result]) -> Stmt:
@@ -494,13 +439,8 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
 @dataclass
 class DocumentQuery(Query, Selected):
     collection: Collection
-    key_value_match: Dict[str, Any]
 
-    def __post_init__(self):
-        for key, value in self.key_value_match.items():
-            self.matchers.append(eq(key, value))
-
-    def out(self, *edge_collection_types: Type[Edge]) -> EdgeQuery:
+    def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
             attribute_return_list=[],
@@ -510,17 +450,36 @@ class DocumentQuery(Query, Selected):
             aliases=[],
             direction='OUTBOUND',
             outer_query=self,
-            traversal_prefix='t'
+            min_depth=min_depth,
+            max_depth=max_depth
         )
 
-    def inbound(self, *edge_collection_types: Type[Edge]) -> EdgeQuery:
+    def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
+            outer_query_returns='',
+            attribute_return_list=[],
             edge_collections=[e.get_collection() for e in edge_collection_types],
             matchers=[],
             attribute_return='',
             aliases=[],
             direction='INBOUND',
-            outer_query=self
+            outer_query=self,
+            min_depth=min_depth,
+            max_depth=max_depth
+        )
+
+    def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
+        return EdgeQuery(
+            outer_query_returns='',
+            attribute_return_list=[],
+            edge_collections=[e.get_collection() for e in edge_collection_types],
+            matchers=[],
+            attribute_return='',
+            aliases=[],
+            direction='ANY',
+            outer_query=self,
+            min_depth=min_depth,
+            max_depth=max_depth
         )
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
@@ -561,7 +520,8 @@ class DocumentQuery(Query, Selected):
                     FOR o_{prefix} IN {self.collection.name}
                         {step_stmts}
                     ''', bind_vars, returns=f'o_{prefix}' + self.attribute_return,
-                        result=VALUE if self.attribute_return else self.collection.document_type, aliases=self.aliases)
+                        result=VALUE_RESULT if self.attribute_return else self.collection.document_type,
+                        aliases=self.aliases)
 
         if self.previous:
             previous_stmt = self.previous._to_stmt(prefix=f'{prefix}_0', alias_to_result=alias_to_result)
@@ -573,7 +533,8 @@ class DocumentQuery(Query, Selected):
                         FOR o_{prefix} IN previous
                         {step_stmts}
                     ''', bind_vars, returns=f'o_{prefix}{self.attribute_return}',
-                        result=VALUE if self.attribute_return else self.collection.document_type, aliases=self.aliases)
+                        result=VALUE_RESULT if self.attribute_return else self.collection.document_type,
+                        aliases=self.aliases)
 
         raise ValueError
 
@@ -581,58 +542,74 @@ class DocumentQuery(Query, Selected):
 @dataclass
 class EdgeTargetQuery(InnerQuery):
     target_collections: List[Collection]
-    outer_query: Query
+    outer_query: Union[Query, None]
     direction: str
-    traversal_prefix: dataclass_field(default='')
 
-    def out(self, *edge_collection_types: Type[Edge]) -> EdgeQuery:
-        print(edge_collection_types)
+    def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
-            attribute_return='',
             attribute_return_list=[],
-            aliases=[],
+            edge_collections=[e.get_collection() for e in edge_collection_types],
             matchers=[],
-            direction='outbound',
+            attribute_return='',
+            aliases=[],
+            direction='OUTBOUND',
             outer_query=self,
-            traversal_prefix=self.traversal_prefix + '_t'
+            min_depth=min_depth,
+            max_depth=max_depth
+        )
+
+    def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
+        return EdgeQuery(
+            outer_query_returns='',
+            attribute_return_list=[],
+            edge_collections=[e.get_collection() for e in edge_collection_types],
+            matchers=[],
+            attribute_return='',
+            aliases=[],
+            direction='INBOUND',
+            outer_query=self,
+            min_depth=min_depth,
+            max_depth=max_depth
+        )
+
+    def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
+        return EdgeQuery(
+            outer_query_returns='',
+            attribute_return_list=[],
+            edge_collections=[e.get_collection() for e in edge_collection_types],
+            matchers=[],
+            attribute_return='',
+            aliases=[],
+            direction='ANY',
+            outer_query=self,
+            min_depth=min_depth,
+            max_depth=max_depth
         )
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
-        traversal_stmt = self._get_traversal_stmt(prefix=prefix, relative_to=self.outer_query_returns, index=1,
+        return self._get_traversal_stmt(prefix=prefix, relative_to=self.outer_query_returns, index=1,
                                                   alias_to_result=alias_to_result)
-        traversal_stmt.result = self._get_result(AnyResult([c.document_type for c in self.target_collections]))
-
-        return traversal_stmt
 
     def _get_traversal_stmt(self, prefix: str = 'p', relative_to: str = None, index: int = 0,
                             alias_to_result: Dict[str, Result] = None) -> Stmt:
         if not alias_to_result:
             alias_to_result = {}
 
-        bind_vars, step_stmts, bind_vars_index = {}, [], index
+        returns = f'{prefix}_v'
+        result = self._get_result(AnyResult([t.document_type for t in self.target_collections])) if len(self.target_collections) > 0 else DOCUMENT_RESULT
 
-        for matcher in self.matchers:
-            query_stmt, vars = matcher._to_filter_stmt(prefix=f'{prefix}_{bind_vars_index}', relative_to='v').expand()
-            step_stmts.append(query_stmt)
-            bind_vars.update(vars)
-            bind_vars_index += 1
+        filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
 
-        for alias in self.aliases:
-            step_stmts.append(f'''LET {alias} = v''')
+        step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
+                                                                      returns=returns + self.attribute_return,
+                                                                      prefix=prefix, bind_vars_index=index)
 
         if self.outer_query:
             edge_query = self.outer_query
 
-            for matcher in edge_query.matchers:
-                query_stmt, vars = matcher._to_filter_stmt(prefix=f'{prefix}_{bind_vars_index}',
-                                                           relative_to='e').expand()
-                step_stmts.append(query_stmt)
-                bind_vars.update(vars)
-                bind_vars_index += 1
-
             previous_str = ''
+
             if self.outer_query.outer_query:
                 previous_stmt = self.outer_query.outer_query._to_stmt(f'{prefix}_0', alias_to_result=alias_to_result)
                 alias_to_result.update(previous_stmt.alias_to_result)
@@ -640,39 +617,35 @@ class EdgeTargetQuery(InnerQuery):
                 bind_vars.update(previous_bind_vars)
                 relative_to = previous_stmt.returns
 
+            outer_query_step_stmts, bind_vars, bind_vars_index = self.outer_query._get_step_stmts(
+                relative_to=f'{prefix}_e', bind_vars=bind_vars, bind_vars_index=bind_vars_index,
+                prefix=f'{prefix}', returns=f'{prefix}_e' + self.outer_query.attribute_return)
+
             return Stmt(f'''
             {previous_str}
-            FOR {self.traversal_prefix}_v, {self.traversal_prefix}_e IN 1..1 {edge_query.direction} {relative_to}._id {",".join([e.name for e in edge_query.edge_collections]) if edge_query.edge_collections else ""}
-                FILTER {" or ".join([f"IS_SAME_COLLECTION('{t.name}', {self.traversal_prefix}_v)" for t in self.target_collections])}
-                {DELIMITER.join(step_stmts)}
-            ''', bind_vars, alias_to_result=alias_to_result,
-                        returns=f'{self.traversal_prefix}_v{self.attribute_return}',
-                        result=self._get_result(Document))
-        #  FOR v, e IN 1..1 {self.direction} {relative_to}._id
+            FOR {prefix}_v, {prefix}_e IN {self.outer_query.min_depth}..{self.outer_query.max_depth} {edge_query.direction} {relative_to}._id {",".join([e.name for e in edge_query.edge_collections]) if edge_query.edge_collections else ""}
+                {filter_target_collection}
+                {step_stmts}
+                {outer_query_step_stmts}
+            ''', bind_vars, alias_to_result=alias_to_result, returns=returns+self.attribute_return,
+                        result=result)
+
         return Stmt(f'''
-
-            FILTER {" or ".join([f"IS_SAME_COLLECTION('{t.name}', {self.traversal_prefix}_v)" for t in self.target_collections])}
             {DELIMITER.join(step_stmts)}
-        ''', bind_vars, alias_to_result=alias_to_result, result=self._get_result(Document),
-                    returns=f'{self.traversal_prefix}_v{self.attribute_return}')
-
-    # def _to_array_stmt(self, prefix: str='p', alias_to_result: Dict[str, Result] = None):
-    #     if not alias_to_result:
-    #         alias_to_result = {}
-    #
-    #
+        ''', bind_vars, alias_to_result=alias_to_result, result=result,
+                    returns=returns+self.attribute_return)
 
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
         traversal_stmt, bind_vars = self._get_traversal_stmt(prefix=prefix,
                                                              relative_to=relative_to).expand_without_return()
 
         return Stmt(f'''
-        LET sub = (
+        LET {prefix}_sub = (
             {traversal_stmt}
             RETURN 1
         )
 
-        FILTER LENGTH(sub) > 0
+        FILTER LENGTH({prefix}_sub) > 0
         ''', bind_vars)
 
 
@@ -689,9 +662,9 @@ class AttributeFilter(Filter):
 
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
         if isinstance(self.compare_value, Var):
-            return Stmt(f'filter {relative_to}.{self.attribute} {self.operator} {self.compare_value.attribute_return}',
+            return Stmt(f'FILTER {relative_to}.{self.attribute} {self.operator} {self.compare_value.attribute_return}',
                         {})
-        return Stmt(f'filter {relative_to}.{self.attribute} {self.operator} @{prefix} ', {prefix: self.compare_value})
+        return Stmt(f'FILTER {relative_to}.{self.attribute} {self.operator} @{prefix} ', {prefix: self.compare_value})
 
 
 @dataclass
@@ -708,9 +681,8 @@ class Array(Query):
                                                                       returns=f'array_{prefix}' + self.attribute_return,
                                                                       prefix=prefix, bind_vars_index=1)
 
-        # self.inner_query._set_outer_query(self.outer_query)
         self.inner_query.outer_query_returns = f'oqr_{prefix}'
-
+        # if isinstance(self.inner_query)
         outer_stmt = self.outer_query._to_stmt(f'{prefix}_0', alias_to_result=alias_to_result)
         alias_to_result.update(outer_stmt.alias_to_result)
         outer_str, outer_bind_vars = outer_stmt.expand_without_return()
@@ -733,81 +705,6 @@ class Array(Query):
                     result=self._get_result(ListResult(inner_stmt.result)))
 
 
-class Company(Document):
-
-    def __init__(self,
-                 name: str = None,
-                 employee_number: int = None,
-                 **kwargs
-                 ):
-        super().__init__(**kwargs)
-        self.name = name
-        self.employee_number = employee_number
-
-    @classmethod
-    def get_collection(cls) -> Collection:
-        return col.COMPANY_COLLECTION
-
-    @classmethod
-    def match(cls, *matchers, **key_value_match):
-        return DocumentQuery(
-            attribute_return_list=[],
-            aliases=[],
-            attribute_return='',
-            collection=cls.get_collection(),
-            matchers=list(matchers),
-            key_value_match=key_value_match
-        )
-
-
-col.COMPANY_COLLECTION.document_type = Company
-
-
-class LocatedIn(Edge):
-
-    def __init__(self,
-                 since: datetime,
-                 until: datetime,
-                 **kwargs
-                 ):
-        super().__init__(**kwargs)
-        self.since = since
-        self.until = until
-
-    @classmethod
-    def get_collection(cls) -> Collection:
-        return col.LOCATED_AT
-
-
-class Country(Document):
-
-    def __init__(self,
-                 name: str = None,
-                 abbreviation: str = None,
-                 **kwargs
-                 ):
-        super().__init__(**kwargs)
-        self.name = name
-        self.abbreviation = abbreviation
-
-    @classmethod
-    def get_collection(cls) -> Collection:
-        return col.COUNTRY_COLLECTION
-
-    @classmethod
-    def match(cls, *matchers: Filter, **key_value_match: Any):
-        return DocumentQuery(
-            aliases=[],
-            attribute_return='',
-            collection=cls.get_collection(),
-            matchers=list(matchers),
-            key_value_match=key_value_match
-        )
-
-
-col.LOCATED_AT.document_type = LocatedIn
-
-
 def like(attribute: str, compare_value: Any) -> AttributeFilter:
     return AttributeFilter(attribute=attribute, operator='LIKE', compare_value=compare_value)
 
@@ -820,23 +717,53 @@ def gt(attribute: str, compare_value: Any) -> AttributeFilter:
     return AttributeFilter(attribute=attribute, operator='>', compare_value=compare_value)
 
 
-def out(*edge_collection_types: Type[Edge]) -> EdgeQuery:
+def out(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
     return EdgeQuery(
-        traversal_prefix='t',
         outer_query_returns='',
         edge_collections=[e.get_collection() for e in edge_collection_types],
         attribute_return='',
         attribute_return_list=[],
         aliases=[],
         matchers=[],
-        direction='outbound',
-        outer_query=None
+        direction='OUTBOUND',
+        outer_query=None,
+        min_depth=min_depth,
+        max_depth=max_depth
     )
 
 
-def to(*collection_types: Type[Document]) -> EdgeTargetQuery:
+def inbound(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
+    return EdgeQuery(
+        outer_query_returns='',
+        edge_collections=[e.get_collection() for e in edge_collection_types],
+        attribute_return='',
+        attribute_return_list=[],
+        aliases=[],
+        matchers=[],
+        direction='INBOUND',
+        outer_query=None,
+        min_depth=min_depth,
+        max_depth=max_depth
+    )
+
+
+def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
+    return EdgeQuery(
+        outer_query_returns='',
+        edge_collections=[e.get_collection() for e in edge_collection_types],
+        attribute_return='',
+        attribute_return_list=[],
+        aliases=[],
+        matchers=[],
+        direction='ANY',
+        outer_query=None,
+        min_depth=min_depth,
+        max_depth=max_depth
+    )
+
+
+def to(*collection_types: Type['Document']) -> EdgeTargetQuery:
     return EdgeTargetQuery(
-        traversal_prefix='t',
         target_collections=[c.get_collection() for c in collection_types],
         aliases=[],
         matchers=[],
@@ -878,22 +805,25 @@ def var(expression: str):
     return v
 
 
-def main():
-    query = Company.match().as_var('a').match(some='value').out(LocatedIn).to(Country) \
-        .array(
-        out(LocatedIn).to(Country).match(more='value')
-    ).as_var('b')
 
-    client = ArangoClient()
-    db = client.db('test', username='root', password='')
-
-    query_stmt = query._to_stmt()
-    query_str, bind_vars = query_stmt.expand()
-    print(query_stmt.result)
-    print(query_str, bind_vars)
-    # result = db.aql.execute(query_str, bind_vars=bind_vars)
-    # print(json.dumps(list(result), indent=4))
-
-
-if __name__ == '__main__':
-    main()
+# def main():
+#     query = Company.match().as_var('a').match(some='value').out(LocatedIn).to(Country) \
+#         .array(
+#         out(LocatedIn).to(Country).array(
+#             out(LocatedIn).to(Country)
+#         )
+#     ).as_var('b')
+#
+#     client = ArangoClient()
+#     db = client.db('test', username='root', password='')
+#
+#     query_stmt = query._to_stmt()
+#     query_str, bind_vars = query_stmt.expand()
+#     print(query_stmt.result)
+#     print(query_str, bind_vars)
+#     # result = db.aql.execute(query_str, bind_vars=bind_vars)
+#     # print(json.dumps(list(result), indent=4))
+#
+#
+# if __name__ == '__main__':
+#     main()
