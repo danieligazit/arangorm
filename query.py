@@ -22,7 +22,7 @@ class Filter(ABC):
 @dataclass
 class Returns:
     attribute_return: str = dataclass_field(default='', init=False)
-    attribute_return_list: List[str] = dataclass_field(default='', init=False)
+    attribute_return_list: List[str] = dataclass_field(default_factory=list, init=False)
 
     def _get_result(self, result: Result) -> Result:
         for attribute in self.attribute_return_list:
@@ -423,10 +423,10 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
         return traversal_stmt
 
     def _to_group_stmt(self, prefix: str, collected: str, alias_to_result: Dict[str, Result]) -> Stmt:
-        traversal_stmt = self._get_traversal_stmt(prefix, relative_to='doc', alias_to_result=alias_to_result)
+        traversal_stmt = self._get_traversal_stmt(prefix, relative_to=f'{prefix}_doc', alias_to_result=alias_to_result)
 
         traversal_stmt.query_str = f'''
-            FOR doc in {collected}[*]
+            FOR {prefix}_doc in {collected}[*]
                 {traversal_stmt.query_str}
         '''
 
@@ -532,7 +532,7 @@ class DocumentQuery(Query, Selected):
 
 
 @dataclass
-class EdgeTargetQuery(InnerQuery):
+class EdgeTargetQuery(Filter, Grouped, InnerQuery):
     target_collections: List[Collection]
     outer_query: Union[Query, None]
     direction: str
@@ -568,11 +568,13 @@ class EdgeTargetQuery(InnerQuery):
         )
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
+        return self._get_traversal_stmt(prefix, f'{prefix}_v', alias_to_result)
+
+    def _get_traversal_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result] = None):
         if not alias_to_result:
             alias_to_result = {}
 
         returns = f'{prefix}_v'
-        relative_to = returns
         result = self._get_result(AnyResult([t.document_type for t in self.target_collections])) if len(
             self.target_collections) > 0 else DOCUMENT_RESULT
 
@@ -606,13 +608,13 @@ class EdgeTargetQuery(InnerQuery):
                 {step_stmts}
                 {outer_query_step_stmts}
             ''', bind_vars, alias_to_result=alias_to_result, returns=returns + self.attribute_return,
-                        result=result)
+                        result=result, aliases=self.aliases)
 
         return Stmt(f'''
             {filter_target_collection}
             {step_stmts}
         ''', bind_vars, alias_to_result=alias_to_result, result=result,
-                    returns=returns + self.attribute_return)
+                    returns=returns + self.attribute_return, aliases=self.aliases)
 
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
 
@@ -672,6 +674,18 @@ class EdgeTargetQuery(InnerQuery):
             FILTER LENGTH({prefix}_sub) > 0
             
         ''', bind_vars)
+
+    def _to_group_stmt(self, prefix: str, collected, alias_to_result: Dict[str, Result]) -> Stmt:
+        traversal_stmt = self._get_traversal_stmt(prefix, relative_to=f'{prefix}_doc', alias_to_result=alias_to_result)
+
+        traversal_stmt.query_str = f'''
+                    FOR {prefix}_doc in {collected}[*]
+                        {traversal_stmt.query_str}
+                '''
+
+        traversal_stmt.result = ListResult(AnyResult([e.document_type for e in self.target_collections]))
+
+        return traversal_stmt
 
 
 class AttributeFilter(Filter):
