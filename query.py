@@ -25,6 +25,9 @@ class Returns:
     attribute_return_list: List[str] = dataclass_field(default_factory=list, init=False)
 
     def _get_result(self, result: Result) -> Result:
+        if len(self.attribute_return_list) > 0 and isclass(result):
+            result = DOCUMENT_RESULT
+
         for attribute in self.attribute_return_list:
             result = result[attribute]
 
@@ -69,6 +72,10 @@ class Query(ABC, Returns, Aliased):
         # TODO
         raise ValueError
 
+    def dedup(self, fields: List[str]) -> Q:
+        # TODO
+        raise ValueError
+
     def group(self, *fields: Union[str, 'Field', Type['Document'], Type[object], 'Var'],
               **field_to_display_to_field: Union[str, 'Grouped', Type['Document'], Type[object], 'Var']) -> 'Group':
 
@@ -83,7 +90,7 @@ class Query(ABC, Returns, Aliased):
                 continue
 
             if isinstance(field, Var):
-                display_field_to_grouped[field.name] = field
+                display_field_to_grouped[field._name] = field
                 continue
 
             if isinstance(field, Grouped):
@@ -115,10 +122,10 @@ class Query(ABC, Returns, Aliased):
                 continue
 
             if isinstance(field, Var):
-                display_field_to_grouped[field.name] = field
+                display_field_to_grouped[field._name] = field
                 continue
 
-            display_field_to_grouped[field.__name__ if isclass(field) else str(field)] = Field(field=field)
+            display_field_to_grouped['document' if isclass(field) else str(field)] = Field(field=field)
 
         for display_field, field in field_to_display_to_field.items():
             if isinstance(field, Selected):
@@ -191,6 +198,7 @@ class Aggregated(Grouped, Selected, Aliased):
     def __str__(self) -> str:
         return f'{self.func.lower()}_{self.group}'
 
+
 @dataclass
 class Field(Grouped, Selected, Aliased):
     field: Union[str, Type['Document'], Type[object]]
@@ -218,6 +226,7 @@ class Field(Grouped, Selected, Aliased):
 
     def __str__(self) -> str:
         return str(self.field)
+
 
 @dataclass
 class Group(Query):
@@ -253,7 +262,7 @@ class Group(Query):
             if isinstance(by_field, str):
                 by_fields_stmt.append(f'field_{by_field} = {previous_result}.{by_field}')
             elif isinstance(by_field, Var):
-                by_fields_stmt.append(f'field_{by_field.name} = {by_field.attribute_return}')
+                by_fields_stmt.append(f'field_{by_field._name} = {by_field.attribute_return}')
             else:
                 raise TypeError
 
@@ -571,6 +580,9 @@ class EdgeTargetQuery(Filter, Grouped, InnerQuery):
         return self._get_traversal_stmt(prefix, f'{prefix}_v', alias_to_result)
 
     def _get_traversal_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result] = None):
+        if self.outer_query_returns:
+            relative_to = self.outer_query_returns
+
         if not alias_to_result:
             alias_to_result = {}
 
@@ -814,17 +826,17 @@ def count(field: Union[str, Grouped]):
 
 @dataclass
 class Var(Selected, Returns, Grouped):
-    name: str
+    _name: str
 
     def _to_group_stmt(self, prefix: str, alias_to_result: Dict[str, Result], collected: str = 'groups') -> Stmt:
-        return Stmt(f'''@{prefix}_0''', {f'{prefix}_0': self.attribute_return}, result=alias_to_result[self.name])
+        return Stmt(f'''{self._name}{self.attribute_return}''', {}, result=self._get_result(alias_to_result[self._name]))
 
     def _to_select_stmt(self, prefix: str, alias_to_result: Dict[str, Result], relative_to: str = '') -> Stmt:
-        return Stmt(f'''@{prefix}_0''', {f'{prefix}_0': self.attribute_return}, result=alias_to_result[self.name])
+        return Stmt(f'''{self._name}{self.attribute_return}''', {}, result=self._get_result(alias_to_result[self._name]))
 
 
 def var(expression: str):
-    v = Var(name=expression)
+    v = Var(_name=expression)
     return v
 
 # def main():

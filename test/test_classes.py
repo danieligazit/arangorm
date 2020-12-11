@@ -23,10 +23,12 @@ class Company(Document):
     def __init__(self,
                  name: str = None,
                  employee_number: int = None,
+                 industry: str = None,
                  **kwargs
                  ):
         super().__init__(**kwargs)
         self.name = name
+        self.industry = industry
         self.employee_number = employee_number
 
     @classmethod

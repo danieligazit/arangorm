@@ -4,13 +4,14 @@ from typing import List, Generic, TypeVar
 
 from collection import EdgeCollection
 from query import DocumentQuery
+from result import Result
 
 DEFAULT_DUMP_KEYS = ['_key', '_id', '_rev']
 
 T = TypeVar('T', bound='Collection')
 
 
-class Document(ABC):
+class Document(ABC, Result):
     def __init__(self, _key=None, _rev=None, _id=None):
         self._key = _key
         self._rev = _rev
