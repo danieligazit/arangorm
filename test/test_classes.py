@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List, Type
 
 from collection import EdgeCollection, Collection
 from document import Document, Edge
@@ -10,7 +11,7 @@ LOCATED_AT = EdgeCollection(from_collection=COMPANY_COLLECTION, name='located_at
 SUBSIDIARY_OF = EdgeCollection(from_collection=COMPANY_COLLECTION, name='subsidiary_of',
                                to_collection=COUNTRY_COLLECTION)
 
-COLLECTION_NAME_TO_COLLECTION = {
+COLLECTION_DEFINITION = {
     'country': COUNTRY_COLLECTION,
     'company': COMPANY_COLLECTION,
     'located_at': LOCATED_AT,
@@ -19,7 +20,6 @@ COLLECTION_NAME_TO_COLLECTION = {
 
 
 class Company(Document):
-
     def __init__(self,
                  name: str = None,
                  employee_number: int = None,
@@ -77,7 +77,6 @@ SUBSIDIARY_OF.document_type = SubsidiaryOf
 
 
 class Country(Document):
-
     def __init__(self,
                  name: str = None,
                  abbreviation: str = None,

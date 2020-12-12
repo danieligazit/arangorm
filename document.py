@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 from datetime import datetime
-from typing import List, Generic, TypeVar
+from typing import List, Generic, TypeVar, Any, Dict, Collection
 
 from collection import EdgeCollection
 from query import DocumentQuery
@@ -23,7 +23,7 @@ class Document(ABC, Result):
         pass
 
     @classmethod
-    def _load(cls, d: dict) -> T:
+    def _load(cls, d: Any, _: Dict[str, Collection]) -> T:
         return cls(**d)
 
     def _dump(self) -> dict:
@@ -49,7 +49,7 @@ class Document(ABC, Result):
         self._rev = _rev
 
     def __repr__(self) -> str:
-        return f'{type(self)}{vars(self)}'
+        return f'{self.__class__.__name__}()'
 
     @classmethod
     def match(cls, *matchers, **key_value_match):

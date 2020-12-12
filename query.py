@@ -394,7 +394,7 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
             alias_to_result = {}
 
         result = self._get_result(
-            AnyResult([e.document_type for e in self.edge_collections])) if self.edge_collections else DOCUMENT_RESULT
+            AnyResult([e.document_type for e in self.edge_collections]) if self.edge_collections else DOCUMENT_RESULT)
         step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=f'{prefix}_e',
                                                                       returns=f'{prefix}_e' + self.attribute_return,
                                                                       prefix=prefix)
@@ -587,8 +587,8 @@ class EdgeTargetQuery(Filter, Grouped, InnerQuery):
             alias_to_result = {}
 
         returns = f'{prefix}_v'
-        result = self._get_result(AnyResult([t.document_type for t in self.target_collections])) if len(
-            self.target_collections) > 0 else DOCUMENT_RESULT
+        result = self._get_result(AnyResult([t.document_type for t in self.target_collections]) if len(
+            self.target_collections) > 0 else DOCUMENT_RESULT)
 
         step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
                                                                       returns=returns + self.attribute_return,
@@ -700,20 +700,16 @@ class EdgeTargetQuery(Filter, Grouped, InnerQuery):
         return traversal_stmt
 
 
+@dataclass
 class AttributeFilter(Filter):
     attribute: str
     operator: str
     compare_value: Any
 
-    def __init__(self, attribute: str, operator: str, compare_value: Any):
-        super().__init__()
-        self.attribute = attribute
-        self.operator = operator
-        self.compare_value = compare_value
-
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
+
         if isinstance(self.compare_value, Var):
-            return Stmt(f'FILTER {relative_to}.{self.attribute} {self.operator} {self.compare_value.attribute_return}',
+            return Stmt(f'FILTER {relative_to}.{self.attribute} {self.operator} {self.compare_value._name}{self.compare_value.attribute_return}',
                         {})
         return Stmt(f'FILTER {relative_to}.{self.attribute} {self.operator} @{prefix} ', {prefix: self.compare_value})
 
@@ -722,6 +718,12 @@ class AttributeFilter(Filter):
 class Array(Query):
     outer_query: Query
     inner_query: InnerQuery
+
+    def __getitem__(self, item) -> 'Array':
+        selection = f'[{item}]'
+        self.attribute_return += selection
+        self.attribute_return_list.append(selection)
+        return self
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
         if not alias_to_result:
@@ -829,10 +831,12 @@ class Var(Selected, Returns, Grouped):
     _name: str
 
     def _to_group_stmt(self, prefix: str, alias_to_result: Dict[str, Result], collected: str = 'groups') -> Stmt:
-        return Stmt(f'''{self._name}{self.attribute_return}''', {}, result=self._get_result(alias_to_result[self._name]))
+        return Stmt(f'''{self._name}{self.attribute_return}''', {},
+                    result=self._get_result(alias_to_result[self._name]))
 
     def _to_select_stmt(self, prefix: str, alias_to_result: Dict[str, Result], relative_to: str = '') -> Stmt:
-        return Stmt(f'''{self._name}{self.attribute_return}''', {}, result=self._get_result(alias_to_result[self._name]))
+        return Stmt(f'''{self._name}{self.attribute_return}''', {},
+                    result=self._get_result(alias_to_result[self._name]))
 
 
 def var(expression: str):

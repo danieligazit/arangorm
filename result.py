@@ -1,34 +1,42 @@
+import itertools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Any
 
+from collection import Collection
+
 
 @dataclass
-class Result():
-
-    def _load(self, data) -> Any:
+class Result:
+    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
         pass
 
 
 @dataclass
 class ValueResult(Result):
-    def _load(self, data) -> Any:
+    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
         return data
+
+    def __getitem__(self, item):
+        return VALUE_RESULT
 
 
 @dataclass
 class ListResult(Result):
     inner_result: Result
 
-    def _load(self, data) -> Any:
-        return list(map(self.inner_result._load, data))
+    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+        return list(map(self.inner_result._load, data, itertools.repeat(collection_definition)))
 
+    def __getitem__(self, item):
+        return self.inner_result
 
 @dataclass
 class DocumentResult(Result):
-    def _load(self, data) -> Any:
+    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
         collection_name = data['_id'].split('/')[0]
-        return data
+        return collection_definition.get(collection_name, ValueResult).document_type._load(data,
+                                                                                           collection_definition)
 
     def __getitem__(self, _item):
         return VALUE_RESULT
@@ -38,8 +46,9 @@ class DocumentResult(Result):
 class DictResult(Result):
     display_name_to_result: Dict[str, Result]
 
-    def _load(self, data) -> Any:
-        return {key: self.display_name_to_result[key]._load(value) for key, value in data.items()}
+    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+        return {key: self.display_name_to_result[key]._load(value, collection_definition) for key, value in
+                data.items()}
 
     def __getitem__(self, item):
         return self.display_name_to_result[item]
@@ -53,5 +62,5 @@ DOCUMENT_RESULT = DocumentResult()
 class AnyResult(Result):
     inner_result: List[Result]
 
-    def _load(self, data) -> Any:
-        return DOCUMENT_RESULT._load(data)
+    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+        return DOCUMENT_RESULT._load(data, collection_definition)

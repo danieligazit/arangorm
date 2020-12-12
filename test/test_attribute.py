@@ -15,6 +15,67 @@ def test_document_attribute():
     )
 
 
+def test_document_nested_attribute():
+    compare_query(
+        query=Company.match().address.city,
+        query_str='''FOR o_p IN company'''
+                  '''  RETURN o_p.address.city''',
+        bind_vars={},
+        returns='o_p.address.city',
+        result=VALUE_RESULT,
+    )
+
+
+def test_edge_attribute():
+    compare_query(
+        query=Company.match().out().name,
+        query_str='''FOR o_p_0 IN company'''
+                  '''  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id'''
+                  '''    RETURN p_e.name''',
+        bind_vars={},
+        returns='p_e.name',
+        result=VALUE_RESULT,
+    )
+
+
+def test_edge_target_attribute():
+    compare_query(
+        query=Company.match().out().to().name,
+        query_str='''FOR o_p_0 IN company'''
+                  '''  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id'''
+                  '''    RETURN p_v.name''',
+        bind_vars={},
+        returns='p_v.name',
+        result=VALUE_RESULT,
+    )
+
+
+def test_edge_target_edge_attribute():
+    compare_query(
+        query=Company.match().out().to().out().name,
+        query_str='''FOR o_p_0_0 IN company'''
+                  '''  FOR p_0_v, p_0_e IN 1..1 OUTBOUND o_p_0_0._id'''
+                  '''    FOR p_v, p_e IN 1..1 OUTBOUND p_0_v._id'''
+                  '''       RETURN p_e.name''',
+        bind_vars={},
+        returns='p_e.name',
+        result=VALUE_RESULT,
+    )
+
+
+def test_edge_target_edge_target_attribute():
+    compare_query(
+        query=Company.match().out().to().out().name,
+        query_str='''FOR o_p_0_0 IN company'''
+                  '''  FOR p_0_v, p_0_e IN 1..1 OUTBOUND o_p_0_0._id'''
+                  '''    FOR p_v, p_e IN 1..1 OUTBOUND p_0_v._id'''
+                  '''       RETURN p_e.name''',
+        bind_vars={},
+        returns='p_e.name',
+        result=VALUE_RESULT,
+    )
+
+
 def test_document_as_var_select_attribute():
     compare_query(
         query=Company.match().as_var('a').select(var('a').name),
