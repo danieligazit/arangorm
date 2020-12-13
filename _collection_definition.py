@@ -9,7 +9,7 @@ def collection(collection_name: str):
 
         class_dict = dict(_cls.__dict__)
 
-        def __init__(self, **kwargs):
+        def __init__(self, *args, **kwargs):
             this_kwargs, super_kwargs = {}, {}
             for key, value in kwargs.items():
                 if key in Document.INIT_PROPERTIES:
@@ -18,7 +18,7 @@ def collection(collection_name: str):
                     this_kwargs[key] = value
 
             Document.__init__(self, **super_kwargs)
-            _cls.__init__(self, **this_kwargs)
+            _cls.__init__(self, *args, **this_kwargs)
 
         class_dict['__init__'] = __init__
 
@@ -27,7 +27,7 @@ def collection(collection_name: str):
             return Collection(name=collection_name, document_type=cls)
 
         class_dict['_get_collection'] = _get_collection
-
+        del class_dict['__dict__']
         NewClass = type(_cls.__name__, (Document,), class_dict)
 
         return NewClass
@@ -35,12 +35,12 @@ def collection(collection_name: str):
     return create_class
 
 
-def edge_collection(collection_name: str, from_collections: List[Type[Document]], to_collections: List[Type[Document]]):
+def edge_collection(collection_name: str, from_collections: List[Type], to_collections: List[Type]):
     def create_class(_cls):
 
         class_dict = dict(_cls.__dict__)
 
-        def __init__(self, **kwargs):
+        def __init__(self, *args, **kwargs):
             this_kwargs, super_kwargs = {}, {}
             for key, value in kwargs.items():
                 if key in Document.INIT_PROPERTIES:
@@ -49,7 +49,7 @@ def edge_collection(collection_name: str, from_collections: List[Type[Document]]
                     this_kwargs[key] = value
 
             Edge.__init__(self, **super_kwargs)
-            _cls.__init__(self, **this_kwargs)
+            _cls.__init__(self, *args, **this_kwargs)
 
         class_dict['__init__'] = __init__
 
@@ -60,7 +60,7 @@ def edge_collection(collection_name: str, from_collections: List[Type[Document]]
                                   to_collections=[c._get_collection() for c in to_collections])
 
         class_dict['_get_collection'] = _get_collection
-
+        del class_dict['__dict__']
         NewClass = type(_cls.__name__, (Edge,), class_dict)
 
         return NewClass

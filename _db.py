@@ -1,47 +1,61 @@
+import json
 import itertools
-from typing import Dict, Iterable, Any, List, Union
+from inspect import isclass
+from typing import Dict, Iterable, Any, List, Union, Type, Callable, TypeVar
 
 from arango import ArangoClient
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
-
 from _collection import Collection, EdgeCollection
 from _document import Document, Edge
 from _query import Query, var, out
 from _stmt import Stmt
 from test.test_classes import Company, LocatedIn, Country, SubsidiaryOf
 
+TEdge = TypeVar('TEdge', bound='Edge')
+TDocument = TypeVar('TDocument', bound='Document')
+
 
 class DB:
     def __init__(self, db_name: str, username: str, password: str, graph_name: str = 'main',
-                 collection_definition: Dict[str, Collection] = None):
-        self.client = ArangoClient()
+                 serializer: Callable[[Any], str] = json.dumps, deserializer: Callable[[str], Any] = json.loads):
+        self.client = ArangoClient(serializer=serializer, deserializer=deserializer)
         self.db = self.client.db(db_name, username=username, password=password)
-        self.graph = self.ensure_graph(graph_name)
-        self.collection_definition = collection_definition
+        self.collection_definition = {}
+        self.graph = self._ensure_graph(graph_name)
 
-    def with_collection_definition(self, collection_definition: Dict[str, Collection]) -> 'DB':
-        self.collection_definition = collection_definition
+    def with_collections(self, *collections: Type) -> 'DB':
+        for document_type in collections:
+            if not issubclass(document_type, Document):
+                raise TypeError(f'{document_type} is not a document type')
+
+            collection = document_type._get_collection()
+            if issubclass(document_type, Edge):
+                self._ensure_edge_collection(collection)
+            else:
+                self._ensure_collection(collection)
+
+            self.collection_definition[collection.name] = collection
+
         return self
 
-    def ensure_graph(self, graph_name: str) -> Graph:
+    def _ensure_graph(self, graph_name: str) -> Graph:
         if self.db.has_graph(graph_name):
             return self.db.graph(graph_name)
 
         return self.db.create_graph(graph_name)
 
-    def ensure_edge_collection(self, edge_collection: EdgeCollection, from_collections: List[Collection],
-                               to_collections: List[Collection]) -> ArangoEdgeCollection:
+    def _ensure_edge_collection(self, edge_collection: EdgeCollection) -> ArangoEdgeCollection:
         if not self.graph.has_edge_definition(edge_collection.name):
             return self.graph.create_edge_definition(
                 edge_collection=edge_collection.name,
-                from_vertex_collections=[from_collection.name for from_collection in from_collections],
-                to_vertex_collections=[to_collection.name for to_collection in to_collections]
+                from_vertex_collections=[from_collection.name for from_collection in edge_collection.from_collections],
+                to_vertex_collections=[to_collection.name for to_collection in edge_collection.to_collections]
             )
 
         return self.graph.edge_collection(edge_collection.name)
 
-    def ensure_collection(self, collection: Collection) -> ArangoCollection:
+    def _ensure_collection(self, collection: Collection) -> ArangoCollection:
         if not self.db.has_collection(collection.name):
             return self.db.create_collection(collection.name)
 
@@ -59,27 +73,35 @@ class DB:
     def get_many(self, query: Query) -> List[Any]:
         return list(self._get_query_results(query))
 
-    def add(self, document: Document):
-        cursor = self.ensure_collection(document._get_collection())
+    def add(self, document: TDocument) -> TDocument:
+        cursor = self._ensure_collection(document._get_collection())
         result = cursor.insert(document._dump())
         document._set_meta(**result)
         return document
 
-    def set(self, from_: Union[Query, Document], edge_document: Union[Dict, Edge], to_: Union[Query, Document]):
+    def set(self, from_: Union[Query, Document], edge_document: Union[Type, TEdge], to_: Union[Query, Document],
+            data: Dict[str, Any] = None):
         if isinstance(from_, Document) and isinstance(to_, Document):
-            return self._set_from_objects(from_, to_, edge_document)
+            return self._set_from_objects(from_, to_, edge_document, data)
 
-        self.ensure_edge_collection(edge_document._get_collection(), [], [])
+        self._ensure_edge_collection(edge_document._get_collection())
         bind_vars = {}
 
-        from_stmt = from_._to_stmt() if isinstance(from_, Query) else Stmt(f'[{{_id: @from_id}}]', bind_vars={'from_id': from_._id})
+        from_stmt = from_._to_stmt(prefix='from_p') if isinstance(from_, Query) else Stmt(f'[{{_id: @from_id}}]',
+                                                                                          bind_vars={
+                                                                                              'from_id': from_._id})
         from_str, from_bind_vars = from_stmt.expand()
         bind_vars.update(from_bind_vars)
-        to_stmt = to_._to_stmt() if isinstance(to_, Query) else Stmt(f'[{{_id: @to_id}}]', bind_vars={'to_id': to_._id})
+        to_stmt = to_._to_stmt(prefix='to_p') if isinstance(to_, Query) else Stmt(f'[{{_id: @to_id}}]',
+                                                                                  bind_vars={'to_id': to_._id})
         to_str, to_bind_vars = to_stmt.expand()
         bind_vars.update(to_bind_vars)
 
-        dict_doc = edge_document._dump()
+        if isclass(edge_document):
+            dict_doc = Document._dump_from_dict(data, Document.INIT_PROPERTIES)
+        else:
+            dict_doc = edge_document._dump()
+
         for key, value in dict_doc.items():
             bind_vars[f'edge_{key}'] = value
 
@@ -90,22 +112,16 @@ class DB:
             FOR to_entity IN to_entities
                 insert {{_from: from_entity._id, _to: to_entity._id{',' if len(dict_doc) > 0 else ''} {', '.join([f'{key}: @edge_{key}' for key in dict_doc.keys()])}}} INTO {edge_document._get_collection().name}
         '''
+
         self.db.aql.execute(statement, bind_vars=bind_vars)
 
-    def _set_from_objects(self, from_, to_, edge_document):
-        cursor = self.ensure_edge_collection(edge_document._get_collection(), from_._get_collection(), to_._get_collection())
+    def _set_from_objects(self, from_, to_, edge_document, data):
+        cursor = self._ensure_edge_collection(edge_document._get_collection())
 
-        if isinstance(edge_document, dict):
-            return cursor.link(from_._id, to_._id, data=Document._dump_from_dict(edge_document))
+        if isclass(edge_document):
+            return cursor.link(from_._id, to_._id, data=Document._dump_from_dict(data, Document.INIT_PROPERTIES))
 
-        edge_document._from = from_.item._id
+        edge_document._from = from_._id
         edge_document._to = to_._id
 
         cursor.insert(edge_document._dump())
-
-
-if __name__ == '__main__':
-    db = DB('test', username='root', password='').with_collection_definition(COLLECTION_DEFINITION)
-
-    # print(Company.match().out(Company)._to_stmt().expand()[0])
-    print(db.get_many(Company.match().out(LocatedIn).to(Country)))

@@ -57,8 +57,3 @@ class Edge(Document):
 
     def _dump(self) -> dict:
         return self._dump_from_dict(vars(self), keys=self.INIT_PROPERTIES)
-
-    # def _set_meta(self, _id: str, _key: str, _rev: str, _from: str = None, _to = None, _to: str):
-    #     super()._set_meta(_id, _key, _rev)
-    #     self._from = _from
-    #     self._to = _to
