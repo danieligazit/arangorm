@@ -1,15 +1,16 @@
 from abc import ABC
 from dataclasses import dataclass
+from typing import List, Type
 
 
 @dataclass
 class Collection(ABC):
     name: str
-    document_type = None
+    document_type: Type['Document']
 
 
 @dataclass
 class EdgeCollection(Collection):
     edge_filter_generator = None
-    from_collection: Collection
-    to_collection: Collection
+    from_collections: List[Collection]
+    to_collections: List[Collection]
