@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Any
 
-from collection import Collection
+from _collection import Collection
 
 
 @dataclass
@@ -31,9 +31,12 @@ class ListResult(Result):
     def __getitem__(self, item):
         return self.inner_result
 
+
 @dataclass
 class DocumentResult(Result):
     def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+        if not data:
+            return {}
         collection_name = data['_id'].split('/')[0]
         return collection_definition.get(collection_name, ValueResult).document_type._load(data,
                                                                                            collection_definition)

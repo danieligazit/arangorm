@@ -1,7 +1,7 @@
 import re
 from typing import Dict, Any
 
-from query import Result, Query
+from _query import Result, Query
 
 _RE_COMBINE_WHITESPACE = re.compile(r"(\s\s)+")
 

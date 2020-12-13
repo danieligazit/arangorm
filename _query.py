@@ -3,9 +3,9 @@ from dataclasses import dataclass, field as dataclass_field
 from inspect import isclass
 from typing import Any, List, Type, Dict, Tuple, TypeVar, Union
 
-from collection import Collection, EdgeCollection
-from result import ListResult, DictResult, AnyResult, Result, VALUE_RESULT, DOCUMENT_RESULT
-from stmt import Stmt
+from _collection import Collection, EdgeCollection
+from _result import ListResult, DictResult, AnyResult, Result, VALUE_RESULT, DOCUMENT_RESULT
+from _stmt import Stmt
 
 DELIMITER = '\n'
 
@@ -29,7 +29,10 @@ class Returns:
             result = DOCUMENT_RESULT
 
         for attribute in self.attribute_return_list:
-            result = result[attribute]
+            if hasattr(result, '__getitem__'):
+                result = result[attribute]
+            else:
+                result = VALUE_RESULT
 
         return result
 
@@ -385,7 +388,7 @@ class EdgeQuery(Filter, Grouped, Selected, InnerQuery):
         return EdgeTargetQuery(
             outer_query_returns='',
             outer_query=self,
-            target_collections=[t.get_collection() for t in target_collection_types],
+            target_collections=[t._get_collection() for t in target_collection_types],
             direction=self.direction,
         )
 
@@ -456,7 +459,7 @@ class DocumentQuery(Query, Selected):
     def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
+            edge_collections=[e._get_collection() for e in edge_collection_types],
             direction='OUTBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -466,7 +469,7 @@ class DocumentQuery(Query, Selected):
     def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
+            edge_collections=[e._get_collection() for e in edge_collection_types],
             direction='INBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -476,7 +479,7 @@ class DocumentQuery(Query, Selected):
     def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
+            edge_collections=[e._get_collection() for e in edge_collection_types],
             direction='ANY',
             outer_query=self,
             min_depth=min_depth,
@@ -549,7 +552,7 @@ class EdgeTargetQuery(Filter, Grouped, InnerQuery):
     def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
+            edge_collections=[e._get_collection() for e in edge_collection_types],
             direction='OUTBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -559,7 +562,7 @@ class EdgeTargetQuery(Filter, Grouped, InnerQuery):
     def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
+            edge_collections=[e._get_collection() for e in edge_collection_types],
             direction='INBOUND',
             outer_query=self,
             min_depth=min_depth,
@@ -569,7 +572,7 @@ class EdgeTargetQuery(Filter, Grouped, InnerQuery):
     def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
         return EdgeQuery(
             outer_query_returns='',
-            edge_collections=[e.get_collection() for e in edge_collection_types],
+            edge_collections=[e._get_collection() for e in edge_collection_types],
             direction='ANY',
             outer_query=self,
             min_depth=min_depth,
@@ -773,7 +776,7 @@ def gt(attribute: str, compare_value: Any) -> AttributeFilter:
 def out(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
     return EdgeQuery(
         outer_query_returns='',
-        edge_collections=[e.get_collection() for e in edge_collection_types],
+        edge_collections=[e._get_collection() for e in edge_collection_types],
         direction='OUTBOUND',
         outer_query=None,
         min_depth=min_depth,
@@ -784,7 +787,7 @@ def out(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: 
 def inbound(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
     return EdgeQuery(
         outer_query_returns='',
-        edge_collections=[e.get_collection() for e in edge_collection_types],
+        edge_collections=[e._get_collection() for e in edge_collection_types],
         direction='INBOUND',
         outer_query=None,
         min_depth=min_depth,
@@ -795,7 +798,7 @@ def inbound(*edge_collection_types: Type['Edge'], min_depth: int = None, max_dep
 def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeQuery:
     return EdgeQuery(
         outer_query_returns='',
-        edge_collections=[e.get_collection() for e in edge_collection_types],
+        edge_collections=[e._get_collection() for e in edge_collection_types],
         direction='ANY',
         outer_query=None,
         min_depth=min_depth,
@@ -805,7 +808,7 @@ def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None, ma
 
 def to(*collection_types: Type['Document']) -> EdgeTargetQuery:
     return EdgeTargetQuery(
-        target_collections=[c.get_collection() for c in collection_types],
+        target_collections=[c._get_collection() for c in collection_types],
         outer_query=None,
         outer_query_returns='',
         direction='OUTBOUND'
@@ -843,24 +846,3 @@ def var(expression: str):
     v = Var(_name=expression)
     return v
 
-# def main():
-#     query = Company.match().as_var('a').match(some='value').out(LocatedIn).to(Country) \
-#         .array(
-#         out(LocatedIn).to(Country).array(
-#             out(LocatedIn).to(Country)
-#         )
-#     ).as_var('b')
-#
-#     client = ArangoClient()
-#     db = client.db('test', username='root', password='')
-#
-#     query_stmt = query._to_stmt()
-#     query_str, bind_vars = query_stmt.expand()
-#     print(query_stmt.result)
-#     print(query_str, bind_vars)
-#     # result = db.aql.execute(query_str, bind_vars=bind_vars)
-#     # print(json.dumps(list(result), indent=4))
-#
-#
-# if __name__ == '__main__':
-#     main()

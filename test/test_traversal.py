@@ -1,4 +1,4 @@
-from query import *
+from _query import *
 from test.test_classes import Company, LocatedIn, Country, SubsidiaryOf
 from test.test_utility import compare_query
 
@@ -174,13 +174,41 @@ def test_varying_depth_any_vertex():
     )
 
 
-def test_multilevel():
+def test_multilevel_any():
     compare_query(
         query=Company.match().out(SubsidiaryOf, min_depth=2).to(Company).connected_by(LocatedIn, max_depth=3),
         query_str='''FOR o_p_0_0 IN company'''
                   '''  FOR p_0_v, p_0_e IN 2..2 OUTBOUND o_p_0_0._id subsidiary_of'''
                   '''    FILTER IS_SAME_COLLECTION('company', p_0_v)'''
                   '''    FOR p_v, p_e IN 1..3 ANY p_0_v._id located_at'''
+                  '''       RETURN p_e''',
+        bind_vars={},
+        returns='p_e',
+        result=AnyResult([LocatedIn])
+    )
+
+
+def test_multilevel_out():
+    compare_query(
+        query=Company.match().out(SubsidiaryOf, min_depth=2).to(Company).out(LocatedIn, max_depth=3),
+        query_str='''FOR o_p_0_0 IN company'''
+                  '''  FOR p_0_v, p_0_e IN 2..2 OUTBOUND o_p_0_0._id subsidiary_of'''
+                  '''    FILTER IS_SAME_COLLECTION('company', p_0_v)'''
+                  '''    FOR p_v, p_e IN 1..3 OUTBOUND p_0_v._id located_at'''
+                  '''       RETURN p_e''',
+        bind_vars={},
+        returns='p_e',
+        result=AnyResult([LocatedIn])
+    )
+
+
+def test_multilevel_in():
+    compare_query(
+        query=Company.match().out(SubsidiaryOf, min_depth=2).to(Company).inbound(LocatedIn, max_depth=3),
+        query_str='''FOR o_p_0_0 IN company'''
+                  '''  FOR p_0_v, p_0_e IN 2..2 OUTBOUND o_p_0_0._id subsidiary_of'''
+                  '''    FILTER IS_SAME_COLLECTION('company', p_0_v)'''
+                  '''    FOR p_v, p_e IN 1..3 INBOUND p_0_v._id located_at'''
                   '''       RETURN p_e''',
         bind_vars={},
         returns='p_e',
@@ -246,3 +274,5 @@ def test_traversal_and_match_all():
         returns='p_v',
         result=AnyResult([Country, Company])
     )
+
+

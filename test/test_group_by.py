@@ -1,4 +1,4 @@
-from query import *
+from _query import *
 from test.test_classes import Company, Country, LocatedIn
 from test.test_utility import compare_query
 

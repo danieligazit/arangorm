@@ -1,5 +1,5 @@
 from test.test_classes import Country
-from query import *
+from _query import *
 from test.test_classes import Company, LocatedIn
 from test.test_utility import compare_query
 
@@ -88,3 +88,23 @@ def test_document_as_var_select_attribute():
         returns=None,
         result=DictResult(display_name_to_result={'a': VALUE_RESULT}),
     )
+
+
+def test_array_at_index_attribute():
+    compare_query(
+        query=Company.match().as_var('a').array(Company.match(industry=var('a').industry))[0].industry,
+        query_str='''FOR o_p_0 IN company'''
+                  '''  LET a = o_p_0'''
+                  '''  LET oqr_p = o_p_0'''
+                  '''  LET array_p = ('''
+                  '''    FOR o_p_1 IN company'''
+                  '''     FILTER o_p_1.industry == a.industry'''
+                  '''     RETURN o_p_1'''
+                  '''  )'''
+                  '''  RETURN array_p[0].industry''',
+        bind_vars={},
+        returns='array_p[0].industry',
+        result=VALUE_RESULT
+    )
+
+

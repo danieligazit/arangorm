@@ -1,4 +1,4 @@
-from query import *
+from _query import *
 from test.test_classes import Company
 from test.test_utility import compare_query
 
@@ -11,7 +11,6 @@ def test_return_all_from_collection():
         returns='o_p',
         result=Company
     )
-
 
 def test_one_key_value_filter():
     compare_query(

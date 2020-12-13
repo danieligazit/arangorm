@@ -1,7 +1,7 @@
 from dataclasses import field, dataclass
 from typing import Any, Dict, List, Tuple
 
-from result import Result
+from _result import Result
 
 
 @dataclass

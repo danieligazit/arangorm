@@ -5,12 +5,11 @@ from arango import ArangoClient
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 
-from collection import Collection, EdgeCollection
-from document import Document, Edge
-from query import Query, var, out
-from stmt import Stmt
-from test.test_classes import Company, LocatedIn, Country, COLLECTION_DEFINITION, SubsidiaryOf, SUBSIDIARY_OF, \
-    COMPANY_COLLECTION
+from _collection import Collection, EdgeCollection
+from _document import Document, Edge
+from _query import Query, var, out
+from _stmt import Stmt
+from test.test_classes import Company, LocatedIn, Country, SubsidiaryOf
 
 
 class DB:
@@ -61,7 +60,7 @@ class DB:
         return list(self._get_query_results(query))
 
     def add(self, document: Document):
-        cursor = self.ensure_collection(document.get_collection())
+        cursor = self.ensure_collection(document._get_collection())
         result = cursor.insert(document._dump())
         document._set_meta(**result)
         return document
@@ -70,7 +69,7 @@ class DB:
         if isinstance(from_, Document) and isinstance(to_, Document):
             return self._set_from_objects(from_, to_, edge_document)
 
-        self.ensure_edge_collection(edge_document.get_collection(), [], [])
+        self.ensure_edge_collection(edge_document._get_collection(), [], [])
         bind_vars = {}
 
         from_stmt = from_._to_stmt() if isinstance(from_, Query) else Stmt(f'[{{_id: @from_id}}]', bind_vars={'from_id': from_._id})
@@ -89,12 +88,12 @@ class DB:
         LET to_entities = ({to_str})
         FOR from_entity IN from_entities
             FOR to_entity IN to_entities
-                insert {{_from: from_entity._id, _to: to_entity._id{',' if len(dict_doc) > 0 else ''} {', '.join([f'{key}: @edge_{key}' for key in dict_doc.keys()])}}} INTO {edge_document.get_collection().name}
+                insert {{_from: from_entity._id, _to: to_entity._id{',' if len(dict_doc) > 0 else ''} {', '.join([f'{key}: @edge_{key}' for key in dict_doc.keys()])}}} INTO {edge_document._get_collection().name}
         '''
         self.db.aql.execute(statement, bind_vars=bind_vars)
 
     def _set_from_objects(self, from_, to_, edge_document):
-        cursor = self.ensure_edge_collection(edge_document.get_collection(), from_.get_collection(), to_.get_collection())
+        cursor = self.ensure_edge_collection(edge_document._get_collection(), from_._get_collection(), to_._get_collection())
 
         if isinstance(edge_document, dict):
             return cursor.link(from_._id, to_._id, data=Document._dump_from_dict(edge_document))
@@ -107,12 +106,6 @@ class DB:
 
 if __name__ == '__main__':
     db = DB('test', username='root', password='').with_collection_definition(COLLECTION_DEFINITION)
-    # moodys = db.add(Company(name='Moodys', employee_number=2000, industry='fin'))
-    moodys = db.get(Company.match(name='Moodys', employee_number=2000, industry='fin'))
-    
-    db.set(, SubsidiaryOf(since=None, until=None), moodys)
-    
-    # print(db.get(Company.match().as_var('a').array(out(LocatedIn).to(Country)).as_var('b').select(company=var('a'),
-    #                                                                                               countries=var('b'))))
 
-    # print(db.get_many(Company.match().as_var('a').array(Company.match(industry=var('a').industry))))
+    # print(Company.match().out(Company)._to_stmt().expand()[0])
+    print(db.get_many(Company.match().out(LocatedIn).to(Country)))

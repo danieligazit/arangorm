@@ -1,5 +1,5 @@
-from query import out, var
-from result import DictResult, DOCUMENT_RESULT, ListResult, AnyResult
+from _query import out, var
+from _result import DictResult, DOCUMENT_RESULT, ListResult, AnyResult
 from test.test_classes import Company, LocatedIn, Country
 from test.test_utility import compare_query
 
