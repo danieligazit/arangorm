@@ -8,9 +8,7 @@ from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 from _collection import Collection, EdgeCollection
 from _document import Document, Edge
-from _query import Query, var, out
 from _stmt import Stmt
-from test.test_classes import Company, LocatedIn, Country, SubsidiaryOf
 
 TEdge = TypeVar('TEdge', bound='Edge')
 TDocument = TypeVar('TDocument', bound='Document')
