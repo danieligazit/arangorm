@@ -79,6 +79,13 @@ class DB:
         document._set_meta(**result)
         return document
 
+    def update(self, document: TDocument) -> TDocument:
+        cursor = self._ensure_collection(document._get_collection())
+        result = cursor.update(document._dump())
+        del result['_old_rev']
+        document._set_meta(**result)
+        return document
+
     def set(self, from_: Union[Query, Document], edge_document: Union[Type, TEdge], to_: Union[Query, Document],
             data: Dict[str, Any] = None):
         if isinstance(from_, Document) and isinstance(to_, Document):
