@@ -9,6 +9,7 @@ from arango.collection import Collection as ArangoCollection, EdgeCollection as 
 from _collection import Collection, EdgeCollection
 from _document import Document, Edge
 from _stmt import Stmt
+from _query import Query
 
 TEdge = TypeVar('TEdge', bound='Edge')
 TDocument = TypeVar('TDocument', bound='Document')
@@ -130,3 +131,4 @@ class DB:
         edge_document._to = to_._id
 
         cursor.insert(edge_document._dump())
+
