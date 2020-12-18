@@ -43,7 +43,7 @@ def edge_collection(collection_name: str, from_collections: List[Type], to_colle
         def __init__(self, *args, **kwargs):
             this_kwargs, super_kwargs = {}, {}
             for key, value in kwargs.items():
-                if key in Document.INIT_PROPERTIES:
+                if key in Edge.INIT_PROPERTIES:
                     super_kwargs[key] = value
                 else:
                     this_kwargs[key] = value

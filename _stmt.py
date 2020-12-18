@@ -7,7 +7,7 @@ from _result import Result
 @dataclass
 class Stmt:
     query_str: str
-    bind_vars: Dict[str, Any]
+    bind_vars: Dict[str, Any] = field(default_factory=dict)
     aliases: List[str] = field(default_factory=list)
     returns: str = field(default=None)
     result: Result = field(default=None)
