@@ -1,15 +1,17 @@
 import json
 import itertools
+from dataclasses import dataclass
 from inspect import isclass
 from typing import Dict, Iterable, Any, List, Union, Type, Callable, TypeVar
 
 from arango import ArangoClient
+from arango.db import Database
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 from _collection import Collection, EdgeCollection
 from _document import Document, Edge
 from _stmt import Stmt
-from _query import Query
+from _query import Query, eq, AttributeFilter
 
 TEdge = TypeVar('TEdge', bound='Edge')
 TDocument = TypeVar('TDocument', bound='Document')
@@ -61,8 +63,26 @@ class DB:
         return self.db[collection.name]
 
     def get(self, document) -> Any:
-        query_stmt = document._get_stmt(prefix='p', max_recursion=document._get_max_recursive())
-        query_str, bind_vars = query_stmt.expand()
-        cursor = self.db.aql.execute(query_str, bind_vars=bind_vars)
+        return Cursor(document._get_stmt(prefix='p', max_recursion=document._get_max_recursive()))
 
-        return document._load(next(cursor), self)
+
+@dataclass
+class Cursor:
+    query: Query
+    db: Database
+    _matchers: List[AttributeFilter]
+
+    def all(self):
+        query_stmt = query._to_stmt()
+        query_str, bind_vars = query_stmt.expand()
+
+        return map(self.query._load, self.db.aql.execute(query_str, bind_vars=bind_vars))
+
+    def first(self):
+        return next(self.db.aql.execute(self.query), None)
+
+    def match(self, **key_value_match):
+        for key, value in key_value_match.items():
+            self._matchers.append(eq(key, value))
+
+        return self
