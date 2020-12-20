@@ -1,5 +1,6 @@
 import json
 import itertools
+from collections import defaultdict
 from dataclasses import dataclass, field
 from inspect import isclass
 from itertools import repeat
@@ -73,20 +74,21 @@ class Cursor:
     _matchers: List[AttributeFilter] = field(default_factory=list)
 
     def all(self):
-        query_stmt = self.query._get_stmt(prefix='p', max_recursion=self.query._get_max_recursive())
+        query_stmt = self.query._get_stmt(prefix='p', matchers=self._matchers)
+
         query_str, bind_vars = query_stmt.expand()
 
         return map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db))
 
     def first(self):
-        query_stmt = self.query._to_stmt(prefix='p', max_recursion=self.query._get_max_recursive(),
-                                         matchers=self._matchers)
+        query_stmt = self.query._to_stmt(prefix='p', matchers=self._matchers)
         query_str, bind_vars = query_stmt.expand()
         print(query_str)
-        print(bind_vars)
+        print(json.dumps(bind_vars))
 
         return next(map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
-                    None)
+                None)
+
 
     def match(self, **key_value_match):
         for key, value in key_value_match.items():

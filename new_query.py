@@ -24,7 +24,7 @@ class QueryStep:
 
     def _get_stmt(self, prefix: str, max_recursion: defaultdict, relative_to: str = '') -> Stmt:
         if max_recursion[self.target] == 0:
-            return Stmt('False')
+            return Stmt.expandable()
 
         max_recursion[self.target] = max_recursion[self.target] - 1
 
@@ -37,15 +37,17 @@ class QueryStep:
 @dataclass
 class EdgeTarget(QueryStep):
     target: str
-    max_recursive: Dict[str, int]
+    max_recursion: Dict[str, int] = field(default_factory=dict)
+    _to: bool = field(default=True)
 
-    def _get_max_recursive(self):
-        return self.max_recursive
+    def _get_max_recursion(self):
+        return self.max_recursion
 
     def _get_type(self):
         return STR_TO_TYPE[self.target]
 
-    def _to_stmt(self, prefix: str, max_recursion: defaultdict, matchers: List[AttributeFilter] = None):
+    def _to_stmt(self, prefix: str, matchers: List[AttributeFilter] = None):
+
         if not matchers:
             matchers = []
 
@@ -61,15 +63,17 @@ class EdgeTarget(QueryStep):
             index += len(matcher_vars)
 
         matchers_str = ',\n'.join(matcher_lines)
-        return_stmt = self._get_stmt(prefix=f'{prefix}_re', max_recursion=max_recursion, relative_to=returns)
+        return_stmt = self._get_stmt(prefix=f'{prefix}_re',
+                                     max_recursion=defaultdict(lambda: 1, self._get_max_recursion()),
+                                     relative_to=returns)
         return_str, return_vars = return_stmt.expand()
         bind_vars.update(return_vars)
 
         return Stmt(f'''
-                FOR {returns} IN {self._get_type()._get_collection()}
-                    {matchers_str}
-                    {return_str}
-                ''', bind_vars=bind_vars)
+            FOR {returns} IN {self._get_type()._get_collection()}
+                {matchers_str}
+                RETURN {return_str}
+            ''', bind_vars=bind_vars)
 
     def _get_stmt_(self, prefix: str, max_recursion: defaultdict, relative_to: str = '') -> Stmt:
 
@@ -78,7 +82,7 @@ class EdgeTarget(QueryStep):
         index = 0
 
         for attribute, annotation in self._get_type()._get_edge_schema().items():
-            if not isinstance(annotation, Edge):
+            if not isinstance(annotation, HasEdge):
                 continue
 
             attribute_prefix = f'{prefix}_{index}'
@@ -97,25 +101,31 @@ class EdgeTarget(QueryStep):
         return_str = ',\n'.join(return_lines)
 
         return Stmt(f'''
-            RETURN Merge({relative_to}, {{
+            Merge({relative_to}, {{
                 {return_str}
             }})
-        ''', bind_vars=bind_vars)
+       ''', bind_vars=bind_vars)
 
     def _load(self, result, db):
         target_type = self._get_type()
         edge_schema = target_type._get_edge_schema()
+
         for key, edge in edge_schema.items():
             if key not in result:
                 continue
 
-            result[key] = edge._load(result[key], db)
+            value = result[key]
+            if value is False:
+                result[key] = MISSING
+                continue
+
+            result[key] = edge._load(value, db)
 
         return target_type(**result, _db=db)
 
 
 @dataclass
-class Edge:
+class HasEdge(QueryStep):
     target: str
     direction: str
     many: bool = field(default=False)
@@ -123,7 +133,7 @@ class Edge:
     def _get_type(self):
         return STR_TO_TYPE[self.target]
 
-    def _get_stmt(self, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
+    def _get_stmt_(self, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
         return_lines, bind_vars, index = [], {}, -1
 
         target_type = self._get_type()
@@ -135,6 +145,7 @@ class Edge:
                 edge_target_stmt = annotation._get_stmt(attribute_prefix, max_recursion=max_recursion.copy(),
                                                         relative_to=f'v_{prefix}')
                 edge_target_str, edge_target_vars = edge_target_stmt.expand()
+
                 bind_vars.update(edge_target_vars)
 
                 return_lines.append(f'@{attribute_prefix}: ({edge_target_str})')
@@ -155,6 +166,12 @@ class Edge:
         if not result:
             return
 
+        if self.many:
+            return [self._load_single(r, db) for r in result]
+
+        return self._load_single(result, db)
+
+    def _load_single(self, result, db):
         target_type = self._get_type()
 
         for key, target in target_type._get_target_schema().items():
@@ -163,7 +180,7 @@ class Edge:
 
             value = result[key]
 
-            if value == False:
+            if value is False:
                 result[key] = MISSING
                 continue
 
@@ -172,7 +189,7 @@ class Edge:
         return target_type(**result, _db=db)
 
 
-class DocumentEntity:
+class Document:
     INIT_PROPERTIES = ['_key', '_id', '_rev', '_db']
 
     def __init__(self, _key=None, _rev=None, _id=None, _db=None):
@@ -182,7 +199,7 @@ class DocumentEntity:
         self._db = _db
 
     @classmethod
-    def _to_stmt(cls, prefix: str, max_recursion: defaultdict, matchers: List[AttributeFilter] = None):
+    def _to_stmt(cls, prefix: str, matchers: List[AttributeFilter] = None):
         if not matchers:
             matchers = []
 
@@ -198,7 +215,9 @@ class DocumentEntity:
             index += len(matcher_vars)
 
         matchers_str = ',\n'.join(matcher_lines)
-        return_stmt = cls._get_stmt(prefix=f'{prefix}_re', max_recursion=max_recursion, relative_to=returns)
+        return_stmt = cls._get_stmt(prefix=f'{prefix}_re',
+                                    max_recursion=defaultdict(lambda: 1, cls._get_max_recursion()),
+                                    relative_to=returns)
         return_str, return_vars = return_stmt.expand()
         bind_vars.update(return_vars)
 
@@ -210,7 +229,7 @@ class DocumentEntity:
 
     @classmethod
     def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
-        if max_recursion[cls.__name__] == 0:
+        if max_recursion.get(cls.__name__, max_recursion.default_factory()) == 0:
             return Stmt('False')
 
         max_recursion[cls.__name__] = max_recursion[cls.__name__] - 1
@@ -218,7 +237,7 @@ class DocumentEntity:
         return_lines, bind_vars, index = [], {}, 0
 
         for attribute, annotation in cls._get_edge_schema().items():
-            if not isinstance(annotation, Edge):
+            if not isinstance(annotation, HasEdge):
                 continue
 
             attribute_prefix = f'{prefix}_{index}'
@@ -251,7 +270,7 @@ class DocumentEntity:
         if value is not MISSING:
             return value
 
-        edge_value: Edge = edge_schema[value]
+        edge_value: HasEdge = edge_schema[value]
 
         if edge_value.direction == Direction.OUTBOUND:
             cursor = self._db.get(edge_value).match(_from=self._id)
@@ -262,17 +281,22 @@ class DocumentEntity:
 
         if edge_value.many:
             return cursor.all()
-
         return next(cursor, None)
 
     @classmethod
     def _load(cls, result, db):
         edge_schema = cls._get_edge_schema()
+
         for key, edge in edge_schema.items():
             if key not in result:
                 continue
 
-            result[key] = edge._load(result[key], db)
+            value = result[key]
+            if value is False:
+                result[key] = MISSING
+                continue
+
+            result[key] = edge._load(value, db)
 
         return cls(**result, _db=db)
 
@@ -289,14 +313,89 @@ class EdgeEntity:
         self._db = _db
 
     @classmethod
-    def _load(cls, result, db):
-        edge_schema = cls._get_edge_schema()
+    def _to_stmt(cls, prefix: str, matchers: List[AttributeFilter] = None):
+        if not matchers:
+            matchers = []
 
-        for key, edge in edge_schema.items():
+        matcher_lines, bind_vars, index = [], {}, 0
+
+        returns = f'o_{prefix}'
+
+        for matcher in matchers:
+            query_stmt, matcher_vars = matcher._to_filter_stmt(prefix=f'{prefix}_{index}',
+                                                               relative_to=returns).expand_without_return()
+            matcher_lines.append(query_stmt)
+            bind_vars.update(matcher_vars)
+            index += len(matcher_vars)
+
+        matchers_str = ',\n'.join(matcher_lines)
+        return_stmt = cls._get_stmt(prefix=f'{prefix}_re',
+                                    max_recursion=defaultdict(lambda: 1, cls._get_max_recursion()),
+                                    relative_to=returns)
+        return_str, return_vars = return_stmt.expand()
+        bind_vars.update(return_vars)
+
+        return Stmt(f'''
+                FOR {returns} IN {cls._get_collection()}
+                    {matchers_str}
+                    {return_str}
+                ''', bind_vars=bind_vars)
+
+    @classmethod
+    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
+        if max_recursion.get(cls.__name__, max_recursion.default_factory()) == 0:
+            return Stmt('False')
+
+        max_recursion[cls.__name__] = max_recursion[cls.__name__] - 1
+        return_lines, bind_vars, index = [], {}, 0
+
+        for attribute, annotation in cls._get_target_schema().items():
+            if not isinstance(annotation, EdgeTarget):
+                continue
+
+            annotation: EdgeTarget
+
+            attribute_prefix = f'{prefix}_{index}'
+            attribute_stmt = annotation._get_stmt(attribute_prefix, max_recursion=max_recursion.copy(),
+                                                  relative_to=f'{attribute_prefix}_o')
+            bind_vars[attribute_prefix] = attribute
+            index += 1
+
+            if attribute_stmt.is_expandable:
+                return_lines.append(f'''@{attribute_prefix}: False''')
+                continue
+
+            attribute_str, attribute_bind_vars = attribute_stmt.expand()
+            bind_vars.update(attribute_bind_vars)
+
+            return_lines.append(f'''@{attribute_prefix}: (
+                FOR {attribute_prefix}_o IN {annotation._get_type()._get_collection()}
+                    FILTER {attribute_prefix}_o._id == {relative_to}.{'_to' if annotation._to else '_from'}
+                    RETURN {attribute_str}
+            )[0]''')
+
+        return_str = ',\n'.join(return_lines)
+
+        return Stmt(f'''
+                RETURN Merge({relative_to}, {{
+                    {return_str}
+                }})
+            ''', bind_vars=bind_vars)
+
+    @classmethod
+    def _load(cls, result, db):
+        target_schema = cls._get_target_schema()
+
+        for key, target in target_schema.items():
             if key not in result:
                 continue
 
-            result[key] = edge._load(result, db)
+            value = result[key]
+            if value is False:
+                result[key] = MISSING
+                continue
+
+            result[key] = target._load(value, db)
 
         return cls(**result, _db=db)
 
@@ -312,12 +411,12 @@ class EdgeEntity:
 
         edge_value: EdgeTarget = target_schema[item]
 
-        cursor = self._db.get(edge_value).match(_id=self._to)
+        cursor = self._db.get(edge_value).match(_id=self._to if edge_value._to else self._from)
 
         return cursor.first()
 
 
-def edge(collection: str, target_schema: Dict[str, Edge]):
+def edge(collection: str, target_schema: Dict[str, HasEdge], max_recursion: Dict[str, int] = None):
     def class_creator(cls):
         class_dict = dict(cls.__dict__)
 
@@ -341,6 +440,12 @@ def edge(collection: str, target_schema: Dict[str, Edge]):
         class_dict['_get_collection'] = _get_collection
 
         @classmethod
+        def _get_max_recursion(_):
+            return max_recursion
+
+        class_dict['_get_max_recursion'] = _get_max_recursion
+
+        @classmethod
         def _get_target_schema(_):
             return target_schema
 
@@ -358,19 +463,22 @@ def edge(collection: str, target_schema: Dict[str, Edge]):
     return class_creator
 
 
-def document(collection: str, edge_schema: Dict[str, Edge], max_recursive: Dict[str, int]):
+def document(collection: str, edge_schema: Dict[str, HasEdge], max_recursion: Dict[str, int] = None):
+    if not max_recursion:
+        max_recursion = {}
+
     def class_creator(cls):
         class_dict = dict(cls.__dict__)
 
         def __init__(self, *args, **kwargs):
             this_kwargs, super_kwargs = {}, {}
             for key, value in kwargs.items():
-                if key in DocumentEntity.INIT_PROPERTIES:
+                if key in Document.INIT_PROPERTIES:
                     super_kwargs[key] = value
                 else:
                     this_kwargs[key] = value
 
-            DocumentEntity.__init__(self, **super_kwargs)
+            Document.__init__(self, **super_kwargs)
             cls.__init__(self, *args, **this_kwargs)
 
         class_dict['__init__'] = __init__
@@ -382,10 +490,10 @@ def document(collection: str, edge_schema: Dict[str, Edge], max_recursive: Dict[
         class_dict['_get_collection'] = _get_collection
 
         @classmethod
-        def _get_max_recursive(_):
-            return max_recursive
+        def _get_max_recursion(_):
+            return max_recursion
 
-        class_dict['_get_max_recursive'] = _get_max_recursive
+        class_dict['_get_max_recursion'] = _get_max_recursion
 
         @classmethod
         def _get_edge_schema(_):
@@ -400,7 +508,7 @@ def document(collection: str, edge_schema: Dict[str, Edge], max_recursive: Dict[
         class_dict['__repr__'] = __repr__
 
         del class_dict['__dict__']
-        return type(cls.__name__, (DocumentEntity,), class_dict.copy())
+        return type(cls.__name__, (Document,), class_dict.copy())
 
     return class_creator
 
@@ -408,17 +516,19 @@ def document(collection: str, edge_schema: Dict[str, Edge], max_recursive: Dict[
 @document(
     collection='company',
     edge_schema={
-        'subsidiary': Edge('Subsidiary', direction='outbound', many=False)
+        'subsidiary_of': HasEdge('Subsidiary', direction='outbound', many=False),
+        'has_subsidiaries': HasEdge('Subsidiary', direction='inbound', many=True)
+
     },
-    max_recursive={
-        'Company': 1
-    },
-    # force_schema=False
+    max_recursion={
+        'Company': 0
+    }
 )
 @dataclass
 class Company:
     name: str
-    subsidiary: 'Subsidiary'
+    subsidiary_of: 'Subsidiary'
+    has_subsidiaries: List['Subsidiary']
     employee_number: int
     industry: str
 
@@ -426,14 +536,19 @@ class Company:
 @edge(
     collection='subsidiary_of',
     target_schema={
-        'of': EdgeTarget('Company', max_recursive={'Company': 1})
+        'parent': EdgeTarget('Company', _to=True),
+        'daughter': EdgeTarget('Company', _to=False)
+    },
+    max_recursion={
+        'Company': 2, 'Subsidiary': 5
     }
 )
 @dataclass
 class Subsidiary:
     since: str
     until: str
-    of: Company
+    parent: Company
+    daughter: Company
 
 
 STR_TO_TYPE = {
@@ -442,11 +557,7 @@ STR_TO_TYPE = {
 }
 
 if __name__ == '__main__':
-    q_str, bind_vars = Company._get_stmt(prefix='p',
-                                         max_recursion=defaultdict(lambda: 1, Company._get_max_recursive())).expand()
-
     new_db = DB(username='root', password='', db_name='test')
 
-    result = new_db.get(Company)
-    print(result.first().subsidiary.of)
-    # print(result.first().__repr__)
+    result = new_db.get(Subsidiary)
+    print(result.first())

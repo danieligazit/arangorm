@@ -12,6 +12,7 @@ class Stmt:
     returns: str = field(default=None)
     result: Result = field(default=None)
     alias_to_result: Dict[str, Result] = field(default_factory=dict)
+    is_expandable: bool = field(default=False)
 
     def __post_init__(self):
         for alias in self.aliases:
@@ -24,3 +25,7 @@ class Stmt:
 
     def expand_without_return(self) -> Tuple[str, Dict[str, Any]]:
         return self.query_str, self.bind_vars
+
+    @classmethod
+    def expandable(cls):
+        return cls('False', is_expandable=True)
