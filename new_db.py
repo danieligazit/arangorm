@@ -1,11 +1,11 @@
 import json
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from inspect import isclass
+from itertools import repeat
 from typing import Dict, Iterable, Any, List, Union, Type, Callable, TypeVar
 
 from arango import ArangoClient
-from arango.db import Database
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 from _collection import Collection, EdgeCollection
@@ -63,23 +63,30 @@ class DB:
         return self.db[collection.name]
 
     def get(self, document) -> Any:
-        return Cursor(document._get_stmt(prefix='p', max_recursion=document._get_max_recursive()))
+        return Cursor(document, self)
 
 
 @dataclass
 class Cursor:
-    query: Query
-    db: Database
-    _matchers: List[AttributeFilter]
+    query: Type['DocumentEntity']
+    db: Any
+    _matchers: List[AttributeFilter] = field(default_factory=list)
 
     def all(self):
-        query_stmt = query._to_stmt()
+        query_stmt = self.query._get_stmt(prefix='p', max_recursion=self.query._get_max_recursive())
         query_str, bind_vars = query_stmt.expand()
 
-        return map(self.query._load, self.db.aql.execute(query_str, bind_vars=bind_vars))
+        return map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db))
 
     def first(self):
-        return next(self.db.aql.execute(self.query), None)
+        query_stmt = self.query._to_stmt(prefix='p', max_recursion=self.query._get_max_recursive(),
+                                         matchers=self._matchers)
+        query_str, bind_vars = query_stmt.expand()
+        print(query_str)
+        print(bind_vars)
+
+        return next(map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
+                    None)
 
     def match(self, **key_value_match):
         for key, value in key_value_match.items():

@@ -1,10 +1,9 @@
-from abc import ABC
 from dataclasses import dataclass
 from typing import List, Type
 
 
 @dataclass
-class Collection(ABC):
+class Collection:
     name: str
     document_type: Type['Document']
 
