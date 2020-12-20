@@ -7,7 +7,7 @@ from arango import ArangoClient
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 from _collection import Collection, EdgeCollection
-from _document import Document, Edge
+from _document import Document
 from _stmt import Stmt
 from _query import Query
 

@@ -1,7 +1,6 @@
 from typing import List, Type, Dict
 
-from _collection import Collection, EdgeCollection
-from _document import Document, Edge
+from _document import Document
 from new_query import HasEdge, EdgeEntity
 
 
@@ -52,7 +51,10 @@ def edge(collection: str, target_schema: Dict[str, HasEdge], max_recursion: Dict
     return class_creator
 
 
-def document(collection: str, edge_schema: Dict[str, HasEdge], max_recursion: Dict[str, int] = None):
+def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recursion: Dict[str, int] = None):
+    if not edge_schema:
+        edge_schema = {}
+
     if not max_recursion:
         max_recursion = {}
 

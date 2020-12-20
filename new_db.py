@@ -10,9 +10,6 @@ from arango import ArangoClient
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 from _collection import Collection, EdgeCollection
-from _document import Document, Edge
-from _stmt import Stmt
-from _query import Query, eq, AttributeFilter
 
 TEdge = TypeVar('TEdge', bound='Edge')
 TDocument = TypeVar('TDocument', bound='Document')
@@ -26,20 +23,20 @@ class DB:
         self.collection_definition = {}
         self.graph = self._ensure_graph(graph_name)
 
-    def with_collections(self, *collections: Type) -> 'DB':
-        for document_type in collections:
-            if not issubclass(document_type, Document):
-                raise TypeError(f'{document_type} is not a document type')
-
-            collection = document_type._get_collection()
-            if issubclass(document_type, Edge):
-                self._ensure_edge_collection(collection)
-            else:
-                self._ensure_collection(collection)
-
-            self.collection_definition[collection.name] = collection
-
-        return self
+    # def with_collections(self, *collections: Type) -> 'DB':
+    #     for document_type in collections:
+    #         if not issubclass(document_type, Document):
+    #             raise TypeError(f'{document_type} is not a document type')
+    #
+    #         collection = document_type._get_collection()
+    #         if issubclass(document_type, Edge):
+    #             self._ensure_edge_collection(collection)
+    #         else:
+    #             self._ensure_collection(collection)
+    #
+    #         self.collection_definition[collection.name] = collection
+    #
+    #     return self
 
     def _ensure_graph(self, graph_name: str) -> Graph:
         if self.db.has_graph(graph_name):
@@ -64,34 +61,23 @@ class DB:
         return self.db[collection.name]
 
     def get(self, document) -> Any:
-        return Cursor(document, self)
+        return document._get_cursor(db=self)
 
 
 @dataclass
 class Cursor:
-    query: Type['DocumentEntity']
+    project: Type['Document']
     db: Any
-    _matchers: List[AttributeFilter] = field(default_factory=list)
 
     def all(self):
-        query_stmt = self.query._get_stmt(prefix='p', matchers=self._matchers)
-
+        query_stmt = self._to_stmt(prefix='p')
         query_str, bind_vars = query_stmt.expand()
-
         return map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db))
 
     def first(self):
-        query_stmt = self.query._to_stmt(prefix='p', matchers=self._matchers)
+        query_stmt = self._to_stmt(prefix='p')
         query_str, bind_vars = query_stmt.expand()
         print(query_str)
         print(json.dumps(bind_vars))
-
-        return next(map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
-                None)
-
-
-    def match(self, **key_value_match):
-        for key, value in key_value_match.items():
-            self._matchers.append(eq(key, value))
-
-        return self
+        return next(map(self.project._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
+                    None)
