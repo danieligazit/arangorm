@@ -63,21 +63,30 @@ class DB:
     def get(self, document) -> Any:
         return document._get_cursor(db=self)
 
+    def _load_edge(self, collection: str, edge: Dict[str, Any]):
+        self.graph.insert_edge(collection=collection, edge=edge)
 
-@dataclass
-class Cursor:
-    project: Type['Document']
-    db: Any
+    def _load_document(self, collection: str, document: Dict[str, Any]):
+        self.db.insert_document(collection=collection, document=document)
 
-    def all(self):
-        query_stmt = self._to_stmt(prefix='p')
-        query_str, bind_vars = query_stmt.expand()
-        return map(self.query._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db))
+    def _upsert_edge(self, collection: str, edge: Dict[str, Any]):
+        if self.graph.has_edge(edge):
+            return self.graph.update_edge(edge)
 
-    def first(self):
-        query_stmt = self._to_stmt(prefix='p')
-        query_str, bind_vars = query_stmt.expand()
-        print(query_str)
-        print(json.dumps(bind_vars))
-        return next(map(self.project._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
-                    None)
+        self.graph.insert_edge(collection=collection, edge=edge)
+
+    def _upsert_document(self, collection: str, document: Dict[str, Any]):
+        if self.db.has_document(document):
+            return self.db.update_document(document)
+
+        self.db.insert_document(collection=collection, document=document)
+
+    def upsert(self, document: TDocument) -> TDocument:
+        documents = document._dump()
+
+        for is_edge, collection, document in documents:
+            if is_edge:
+                self._upsert_edge(collection, document)
+                continue
+
+            self._upsert_document(collection, document)

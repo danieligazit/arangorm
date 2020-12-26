@@ -1,17 +1,25 @@
 from typing import List, Type, Dict
 
 from _document import Document
-from new_query import HasEdge, EdgeEntity
+from _edge_entity import EdgeEntity
+from cursor._str_to_type import STR_TO_TYPE
+from cursor.project._project import EdgeTarget, HasEdge
 
 
-def edge(collection: str, target_schema: Dict[str, HasEdge], max_recursion: Dict[str, int] = None):
+def edge(collection: str, target_schema: Dict[str, EdgeTarget] = None, max_recursion: Dict[str, int] = None):
+    if not target_schema:
+        target_schema = {}
+
+    if not max_recursion:
+        max_recursion = {}
+
     def class_creator(cls):
         class_dict = dict(cls.__dict__)
 
         def __init__(self, *args, **kwargs):
             this_kwargs, super_kwargs = {}, {}
             for key, value in kwargs.items():
-                if key in EdgeEntity.INIT_PROPERTIES:
+                if key in EdgeEntity.INIT_PROPERTIES or key in EdgeEntity.IGNORED_PROPERTIES:
                     super_kwargs[key] = value
                 else:
                     this_kwargs[key] = value
@@ -40,13 +48,26 @@ def edge(collection: str, target_schema: Dict[str, HasEdge], max_recursion: Dict
         class_dict['_get_target_schema'] = _get_target_schema
 
         def __repr__(self):
-            content = [f'{key}={value}' for key, value in vars(self).items() if not key.startswith('_')]
+            content = []
+            for key, value in vars(self).items():
+                if key.startswith('_'):
+                    continue
+
+                class_name = value.__class__.__name__
+                if class_name in STR_TO_TYPE:
+                    content.append(f'{key}={value.__class__.__name__}(...)')
+                    continue
+
+                content.append(f'{key}={value}')
             return f'''{self.__class__.__qualname__}({', '.join(content)})'''
 
         class_dict['__repr__'] = __repr__
 
         del class_dict['__dict__']
-        return type(cls.__name__, (EdgeEntity,), class_dict)
+
+        new_type = type(cls.__name__, (EdgeEntity,), class_dict)
+        STR_TO_TYPE[cls.__name__] = new_type
+        return new_type
 
     return class_creator
 
@@ -64,7 +85,7 @@ def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recurs
         def __init__(self, *args, **kwargs):
             this_kwargs, super_kwargs = {}, {}
             for key, value in kwargs.items():
-                if key in Document.INIT_PROPERTIES:
+                if key in Document.INIT_PROPERTIES or key in Document.IGNORED_PROPERTIES:
                     super_kwargs[key] = value
                 else:
                     this_kwargs[key] = value
@@ -93,12 +114,24 @@ def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recurs
         class_dict['_get_edge_schema'] = _get_edge_schema
 
         def __repr__(self):
-            content = [f'{key}={value}' for key, value in vars(self).items() if not key.startswith('_')]
+            content = []
+            for key, value in vars(self).items():
+                if key.startswith('_'):
+                    continue
+
+                class_name = value.__class__.__name__
+                if class_name in STR_TO_TYPE:
+                    content.append(f'{key}={value.__class__.__name__}(...)')
+                    continue
+
+                content.append(f'{key}={value}')
             return f'''{self.__class__.__qualname__}({', '.join(content)})'''
 
         class_dict['__repr__'] = __repr__
 
         del class_dict['__dict__']
-        return type(cls.__name__, (Document,), class_dict.copy())
+        new_type = type(cls.__name__, (Document,), class_dict)
+        STR_TO_TYPE[cls.__name__] = new_type
+        return new_type
 
     return class_creator

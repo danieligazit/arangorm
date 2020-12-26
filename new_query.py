@@ -1,18 +1,16 @@
+from _missing import MISSING
 from _query import AttributeFilter
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List
 
 from _stmt import Stmt
+from cursor._str_to_type import STR_TO_TYPE
 from new_db import DB
 
-
-class _MISSING_TYPE:
-    def __repr__(self):
-        return '<Expandable>'
+# from _collection_definition import STR_TO_TYPE
 
 
-MISSING = _MISSING_TYPE()
 
 
 class Direction:
@@ -404,6 +402,7 @@ class EdgeEntity:
         value = object.__getattribute__(self, item)
 
         if item not in target_schema:
+            print('hey')
             return value
 
         if value is not MISSING:
@@ -550,11 +549,6 @@ class Subsidiary:
     parent: Company
     daughter: Company
 
-
-STR_TO_TYPE = {
-    'Company': Company,
-    'Subsidiary': Subsidiary,
-}
 
 if __name__ == '__main__':
     new_db = DB(username='root', password='', db_name='test')

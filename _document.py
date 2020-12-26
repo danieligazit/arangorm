@@ -1,17 +1,19 @@
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import List, TypeVar
+from itertools import chain
+from typing import List, TypeVar, Dict, Any, Tuple
 
 from _direction import Direction
 from _missing import MISSING
 from _query import AttributeFilter
 from _stmt import Stmt
 from cursor._document_cursor import DocumentCursor
-from new_query import HasEdge
+from cursor.project._project import HasEdge
 
 
 class Document:
-    INIT_PROPERTIES = ['_key', '_id', '_rev', '_db']
+    INIT_PROPERTIES = ['_key', '_id', '_rev']
+    IGNORED_PROPERTIES = ['_db']
 
     def __init__(self, _key=None, _rev=None, _id=None, _db=None):
         self._key = _key
@@ -24,7 +26,7 @@ class Document:
         return DocumentCursor(project=cls, collection=cls._get_collection(), db=db)
 
     @classmethod
-    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
+    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = '', parent: 'Cursor' = None):
         if max_recursion.get(cls.__name__, max_recursion.default_factory()) == 0:
             return Stmt.expandable()
 
@@ -33,6 +35,7 @@ class Document:
         return_lines, bind_vars, index = [], {}, 0
 
         for attribute, annotation in cls._get_edge_schema().items():
+
             if not isinstance(annotation, HasEdge):
                 continue
 
@@ -50,7 +53,7 @@ class Document:
         return_str = ',\n'.join(return_lines)
 
         return Stmt(f'''
-            RETURN Merge({relative_to}, {{
+            Merge({relative_to}, {{
                 {return_str}
             }})
         ''', bind_vars=bind_vars)
@@ -66,7 +69,7 @@ class Document:
         if value is not MISSING:
             return value
 
-        edge_value: HasEdge = edge_schema[value]
+        edge_value: HasEdge = edge_schema[item]
 
         if edge_value.direction == Direction.OUTBOUND:
             cursor = self._db.get(edge_value).match(_from=self._id)
@@ -77,11 +80,18 @@ class Document:
 
         if edge_value.many:
             return cursor.all()
-        return next(cursor, None)
+
+        return cursor.first()
 
     @classmethod
-    def _load(cls, result, db):
+    def _load(cls, result, db, id_to_doc: Dict[str, Any] = None):
+        if not id_to_doc:
+            id_to_doc = {}
+
         edge_schema = cls._get_edge_schema()
+
+        loaded = cls(**result, _db=db)
+        id_to_doc[loaded._id] = loaded
 
         for key, edge in edge_schema.items():
             if key not in result:
@@ -89,9 +99,45 @@ class Document:
 
             value = result[key]
             if value is False:
-                result[key] = MISSING
+                setattr(loaded, key, MISSING)
                 continue
 
-            result[key] = edge._load(value, db)
+            setattr(loaded, key, edge._load(value, db, id_to_doc=id_to_doc))
 
-        return cls(**result, _db=db)
+        return loaded
+
+    def _dump(self, covered_ids: List[str] = None) -> List[Tuple[bool, str, Dict]]:
+        if not covered_ids:
+            covered_ids = []
+
+        if self._id in covered_ids:
+            return []
+
+        result = vars(self)
+        covered_ids.append(result['_id'])
+        edge_schema = self._get_edge_schema()
+        results = []
+
+        for key, value in list(result.items()):
+            if key in self.INIT_PROPERTIES and not value:
+                result.pop(key)
+                continue
+
+            if key in self.IGNORED_PROPERTIES:
+                result.pop(key)
+                continue
+
+            if key not in edge_schema:
+                continue
+
+            if not value:
+                continue
+
+            if isinstance(value, list):
+                results += chain.from_iterable([edge._dump(covered_ids=covered_ids) for edge in value])
+            else:
+                results += value._dump(covered_ids=covered_ids)
+
+            result.pop(key)
+
+        return results + [(False, self._get_collection(), result)]

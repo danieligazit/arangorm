@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from itertools import repeat
 from typing import Type, Any, Tuple, Dict, List, TypeVar
 
-from _query import Aliased
+from cursor._aliased import Aliased
 from cursor.filters._filters import eq
 
 Q = TypeVar('Q', bound='Cursor')
@@ -13,7 +13,7 @@ DELIMITER = '\n'
 
 
 @dataclass
-class Cursor(Aliased):
+class Cursor:
     project: Type['Document']
     db: Any
     matchers: List = field(default_factory=list, init=False)
@@ -29,14 +29,15 @@ class Cursor(Aliased):
 
         project_stmt = self.project._get_stmt(prefix=f'project',
                                               max_recursion=defaultdict(lambda: 1, self.project._get_max_recursion()),
-                                              relative_to=query_stmt.returns)
+                                              relative_to=query_stmt.returns, parent=self)
 
         project_str, project_vars = project_stmt.expand()
-        query_str += DELIMITER + project_str
-        bind_vars.update(project_vars)
+        query_str += DELIMITER + 'RETURN ' + project_str
 
-        print(query_str)
-        print(json.dumps(bind_vars))
+        # print(query_str)
+        bind_vars.update(project_vars)
+        # print(json.dumps(bind_vars))
+
         return next(map(self.project._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
                     None)
 
@@ -62,7 +63,7 @@ class Cursor(Aliased):
             bind_vars.update(matcher_vars)
             bind_vars_index += len(matcher_vars)
 
-        for alias in self.aliases:
-            step_stmts.append(f'''LET {alias} = {returns}''')
+        # for alias in self.aliases:
+        #     step_stmts.append(f'''LET {alias} = {returns}''')
 
         return DELIMITER.join(step_stmts), bind_vars, bind_vars_index
