@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Tuple
 from _missing import MISSING
 from _stmt import Stmt
 from cursor._edge_cursor import EdgeCursor
-from cursor.filters._attribute_filter import AttributeFilter
+from cursor.filters._attribute_filter_generators import AttributeFilter
 from cursor.project._project import EdgeTarget
 
 

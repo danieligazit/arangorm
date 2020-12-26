@@ -1,14 +1,21 @@
 from typing import List, Type, Dict
 
+from _collection import Collection, EdgeCollection
 from _document import Document
 from _edge_entity import EdgeEntity
 from cursor._str_to_type import STR_TO_TYPE
 from cursor.project._project import EdgeTarget, HasEdge
 
 
-def edge(collection: str, target_schema: Dict[str, EdgeTarget] = None, max_recursion: Dict[str, int] = None):
+def edge(collection: str, from_collections: List[Collection] = None, to_collections: List[Collection] = None, target_schema: Dict[str, EdgeTarget] = None, max_recursion: Dict[str, int] = None):
     if not target_schema:
         target_schema = {}
+
+    if not from_collections:
+        from_collections = []
+
+    if not to_collections:
+        to_collections = []
 
     if not max_recursion:
         max_recursion = {}
@@ -31,7 +38,7 @@ def edge(collection: str, target_schema: Dict[str, EdgeTarget] = None, max_recur
 
         @classmethod
         def _get_collection(_):
-            return collection
+            return EdgeCollection(name=collection, from_collections=from_collections, to_collections=to_collections)
 
         class_dict['_get_collection'] = _get_collection
 
@@ -73,6 +80,7 @@ def edge(collection: str, target_schema: Dict[str, EdgeTarget] = None, max_recur
 
 
 def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recursion: Dict[str, int] = None):
+
     if not edge_schema:
         edge_schema = {}
 
@@ -97,7 +105,7 @@ def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recurs
 
         @classmethod
         def _get_collection(_):
-            return collection
+            return Collection(name=collection)
 
         class_dict['_get_collection'] = _get_collection
 

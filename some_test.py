@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from _collection_definition import document, edge
 from _direction import Direction
+from cursor._document_cursor import outbound
 from cursor.project._project import HasEdge, EdgeTarget
 from new_db import DB
 
@@ -13,7 +14,7 @@ from new_db import DB
         'has_subsidiaries': HasEdge('SubsidiaryOf', direction=Direction.INBOUND, many=True)
     },
     max_recursion={
-        'SubsidiaryOf': 2,
+        'SubsidiaryOf': 0,
         'Company': 2
     }
 )
@@ -42,8 +43,10 @@ class SubsidiaryOf:
 
 if __name__ == '__main__':
     opm = DB(username='root', password='', db_name='test')
-    zirra = opm.get(Company).match(employee_number=30).first()
-    zirra.subsidiary_of.daughter.name = 'zirra'
-    opm.upsert(zirra)
-    zirra = opm.get(Company).match(employee_number=30).first()
+    zirra = opm.get(Company).match(outbound(SubsidiaryOf), employee_number=30).outbound(SubsidiaryOf).first() #.out(SubsidiaryOf).to().out(SubsidiaryOf).first()
+
     print(zirra)
+    # zirra.subsidiary_of.daughter.name = 'zirra'
+    # opm.upsert(zirra)
+    # zirra = opm.get(Company).match(employee_number=30).first()
+    # print(zirra)

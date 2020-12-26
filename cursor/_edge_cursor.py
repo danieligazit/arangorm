@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from _direction import Direction
 from _stmt import Stmt
 from cursor._cursor import Cursor
-from cursor._document_cursor import DocumentCursor
+
 
 
 @dataclass

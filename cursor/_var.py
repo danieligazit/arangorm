@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from _query import Returns
+
+from cursor._returns import Returns
 
 
 @dataclass

@@ -9,13 +9,13 @@ from _collection import Collection
 
 @dataclass
 class Result:
-    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+    def _load(self, data, collection_definition: Dict[str, Collection], db: 'DB') -> Any:
         pass
 
 
 @dataclass
 class ValueResult(Result):
-    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+    def _load(self, data, collection_definition: Dict[str, Collection], db: 'DB') -> Any:
         return data
 
     def __getitem__(self, item):
@@ -26,8 +26,8 @@ class ValueResult(Result):
 class ListResult(Result):
     inner_result: Result
 
-    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
-        return list(map(self.inner_result._load, data, itertools.repeat(collection_definition)))
+    def _load(self, data, collection_definition: Dict[str, Collection], db: 'DB') -> Any:
+        return list(map(self.inner_result._load, data, itertools.repeat(collection_definition), itertools.repeat(db)))
 
     def __getitem__(self, item):
         return self.inner_result
@@ -35,7 +35,7 @@ class ListResult(Result):
 
 @dataclass
 class DocumentResult(Result):
-    def _load(self, data, collection_definition: Dict[str, Collection]) -> Any:
+    def _load(self, data, collection_definition: Dict[str, Collection], db:'DB') -> Any:
         if not data:
             return {}
         collection_name = data['_id'].split('/')[0]

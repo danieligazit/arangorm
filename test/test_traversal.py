@@ -5,7 +5,7 @@ from test.test_utility import compare_query
 
 def test_edge_no_collection():
     compare_query(
-        query=Company.match().out(),
+        query=Company.match().outbound(),
         query_str='FOR o_p_0 IN company'
                   '  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id'
                   '   RETURN p_e',
@@ -17,7 +17,7 @@ def test_edge_no_collection():
 
 def test_vertex_no_collection():
     compare_query(
-        query=Company.match().out().to(),
+        query=Company.match().outbound().to(),
         query_str='FOR o_p_0 IN company'
                   '  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id'
                   '   RETURN p_v',
@@ -29,7 +29,7 @@ def test_vertex_no_collection():
 
 def test_edge_outbound():
     compare_query(
-        query=Company.match().out(LocatedIn),
+        query=Company.match().outbound(LocatedIn),
         query_str='FOR o_p_0 IN company'
                   '  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id located_at'
                   '   RETURN p_e',
@@ -65,7 +65,7 @@ def test_edge_any():
 
 def test_edge_outbound_multiple_edges():
     compare_query(
-        query=Company.match().out(LocatedIn, SubsidiaryOf),
+        query=Company.match().outbound(LocatedIn, SubsidiaryOf),
         query_str='FOR o_p_0 IN company'
                   '  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id located_at, subsidiary_of'
                   '   RETURN p_e',
@@ -77,7 +77,7 @@ def test_edge_outbound_multiple_edges():
 
 def test_vertex_outbound():
     compare_query(
-        query=Company.match().out(LocatedIn).to(Country),
+        query=Company.match().outbound(LocatedIn).to(Country),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id located_at'''
                   '''    FILTER IS_SAME_COLLECTION('country', p_v)'''
@@ -90,7 +90,7 @@ def test_vertex_outbound():
 
 def test_outbound_multiple_targets():
     compare_query(
-        query=Company.match().out(LocatedIn).to(Country, Company),
+        query=Company.match().outbound(LocatedIn).to(Country, Company),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id located_at'''
                   '''    FILTER IS_SAME_COLLECTION('country', p_v) OR IS_SAME_COLLECTION('company', p_v)'''
@@ -103,7 +103,7 @@ def test_outbound_multiple_targets():
 
 def test_varying_min_depth():
     compare_query(
-        query=Company.match().out(LocatedIn, min_depth=2),
+        query=Company.match().outbound(LocatedIn, min_depth=2),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 2..2 OUTBOUND o_p_0._id located_at'''
                   '''    RETURN p_e''',
@@ -115,7 +115,7 @@ def test_varying_min_depth():
 
 def test_varying_max_depth():
     compare_query(
-        query=Company.match().out(LocatedIn, max_depth=5),
+        query=Company.match().outbound(LocatedIn, max_depth=5),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 1..5 OUTBOUND o_p_0._id located_at'''
                   '''    RETURN p_e''',
@@ -127,7 +127,7 @@ def test_varying_max_depth():
 
 def test_varying_depth_outbound():
     compare_query(
-        query=Company.match().out(LocatedIn, min_depth=2, max_depth=5),
+        query=Company.match().outbound(LocatedIn, min_depth=2, max_depth=5),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 2..5 OUTBOUND o_p_0._id located_at'''
                   '''    RETURN p_e''',
@@ -151,7 +151,7 @@ def test_varying_depth_inbound():
 
 def test_varying_depth_outbound_vertex():
     compare_query(
-        query=Company.match().out(LocatedIn, min_depth=2, max_depth=5).to(Country),
+        query=Company.match().outbound(LocatedIn, min_depth=2, max_depth=5).to(Country),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 2..5 OUTBOUND o_p_0._id located_at'''
                   '''    FILTER IS_SAME_COLLECTION('country', p_v)'''
@@ -176,7 +176,7 @@ def test_varying_depth_any_vertex():
 
 def test_multilevel_any():
     compare_query(
-        query=Company.match().out(SubsidiaryOf, min_depth=2).to(Company).connected_by(LocatedIn, max_depth=3),
+        query=Company.match().outbound(SubsidiaryOf, min_depth=2).to(Company).connected_by(LocatedIn, max_depth=3),
         query_str='''FOR o_p_0_0 IN company'''
                   '''  FOR p_0_v, p_0_e IN 2..2 OUTBOUND o_p_0_0._id subsidiary_of'''
                   '''    FILTER IS_SAME_COLLECTION('company', p_0_v)'''
@@ -190,7 +190,7 @@ def test_multilevel_any():
 
 def test_multilevel_out():
     compare_query(
-        query=Company.match().out(SubsidiaryOf, min_depth=2).to(Company).out(LocatedIn, max_depth=3),
+        query=Company.match().outbound(SubsidiaryOf, min_depth=2).to(Company).outbound(LocatedIn, max_depth=3),
         query_str='''FOR o_p_0_0 IN company'''
                   '''  FOR p_0_v, p_0_e IN 2..2 OUTBOUND o_p_0_0._id subsidiary_of'''
                   '''    FILTER IS_SAME_COLLECTION('company', p_0_v)'''
@@ -204,7 +204,7 @@ def test_multilevel_out():
 
 def test_multilevel_in():
     compare_query(
-        query=Company.match().out(SubsidiaryOf, min_depth=2).to(Company).inbound(LocatedIn, max_depth=3),
+        query=Company.match().outbound(SubsidiaryOf, min_depth=2).to(Company).inbound(LocatedIn, max_depth=3),
         query_str='''FOR o_p_0_0 IN company'''
                   '''  FOR p_0_v, p_0_e IN 2..2 OUTBOUND o_p_0_0._id subsidiary_of'''
                   '''    FILTER IS_SAME_COLLECTION('company', p_0_v)'''
@@ -218,7 +218,7 @@ def test_multilevel_in():
 
 def test_traversal_and_match_origin_vertices():
     compare_query(
-        query=Company.match(gt('another_field', 42), field='value').out(SubsidiaryOf, min_depth=2),
+        query=Company.match(gt('another_field', 42), field='value').outbound(SubsidiaryOf, min_depth=2),
         query_str='''FOR o_p_0 IN company'''
                   '''  FILTER o_p_0.another_field > @p_0_1'''
                   '''  FILTER o_p_0.field == @p_0_2'''
@@ -232,7 +232,7 @@ def test_traversal_and_match_origin_vertices():
 
 def test_traversal_and_match_edge():
     compare_query(
-        query=Company.match().out(SubsidiaryOf, min_depth=2).match(gt('another_field', 42), field='value'),
+        query=Company.match().outbound(SubsidiaryOf, min_depth=2).match(gt('another_field', 42), field='value'),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 2..2 OUTBOUND o_p_0._id subsidiary_of'''
                   '''    FILTER p_e.another_field > @p_0'''
@@ -246,7 +246,7 @@ def test_traversal_and_match_edge():
 
 def test_traversal_and_match_target_vertices():
     compare_query(
-        query=Company.match().out(SubsidiaryOf, min_depth=2).to().match(gt('another_field', 42), field='value'),
+        query=Company.match().outbound(SubsidiaryOf, min_depth=2).to().match(gt('another_field', 42), field='value'),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 2..2 OUTBOUND o_p_0._id subsidiary_of'''
                   '''    FILTER p_v.another_field > @p_1'''
@@ -260,7 +260,7 @@ def test_traversal_and_match_target_vertices():
 
 def test_traversal_and_match_all():
     compare_query(
-        query=Company.match().out(SubsidiaryOf, LocatedIn, min_depth=2).match(eq('value', 3.1415), some_bool=True).to(
+        query=Company.match().outbound(SubsidiaryOf, LocatedIn, min_depth=2).match(eq('value', 3.1415), some_bool=True).to(
             Country, Company).match(gt('another_field', 42), field='value'),
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 2..2 OUTBOUND o_p_0._id subsidiary_of, located_at'''

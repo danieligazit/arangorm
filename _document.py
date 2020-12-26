@@ -5,7 +5,6 @@ from typing import List, TypeVar, Dict, Any, Tuple
 
 from _direction import Direction
 from _missing import MISSING
-from _query import AttributeFilter
 from _stmt import Stmt
 from cursor._document_cursor import DocumentCursor
 from cursor.project._project import HasEdge

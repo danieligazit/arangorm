@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-from _query import Var
 from _stmt import Stmt
+from cursor._var import Var
 from cursor.filters._filter import Filter
-from cursor.filters._operator import Operator
+from cursor._operator import Operator
 
 
 @dataclass

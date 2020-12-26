@@ -1,11 +1,14 @@
 import json
 from collections import defaultdict
 from dataclasses import dataclass, field
+from inspect import isclass
 from itertools import repeat
 from typing import Type, Any, Tuple, Dict, List, TypeVar
 
+from _result import Result, DOCUMENT_RESULT, VALUE_RESULT
 from cursor._aliased import Aliased
-from cursor.filters._filters import eq
+from cursor._returns import Returns
+from cursor.filters._attribute_filters import eq
 
 Q = TypeVar('Q', bound='Cursor')
 
@@ -13,7 +16,7 @@ DELIMITER = '\n'
 
 
 @dataclass
-class Cursor:
+class Cursor(Returns, Aliased):
     project: Type['Document']
     db: Any
     matchers: List = field(default_factory=list, init=False)
@@ -25,20 +28,27 @@ class Cursor:
 
     def first(self):
         query_stmt = self._to_stmt(prefix='p')
-        query_str, bind_vars = query_stmt.expand_without_return()
 
-        project_stmt = self.project._get_stmt(prefix=f'project',
-                                              max_recursion=defaultdict(lambda: 1, self.project._get_max_recursion()),
-                                              relative_to=query_stmt.returns, parent=self)
 
-        project_str, project_vars = project_stmt.expand()
-        query_str += DELIMITER + 'RETURN ' + project_str
+        if self.project:
+            loader = self.project._load
+            query_str, bind_vars = query_stmt.expand_without_return()
+            project_stmt = self.project._get_stmt(prefix=f'project',
+                                                  max_recursion=defaultdict(lambda: 1,
+                                                                            self.project._get_max_recursion()),
+                                                  relative_to=query_stmt.returns, parent=self)
 
-        # print(query_str)
-        bind_vars.update(project_vars)
-        # print(json.dumps(bind_vars))
+            project_str, project_vars = project_stmt.expand()
+            query_str += DELIMITER + 'RETURN ' + project_str
+            bind_vars.update(project_vars)
+        else:
+            query_str, bind_vars = query_stmt.expand()
+            loader = query_stmt.result._load
 
-        return next(map(self.project._load, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
+        print(query_str)
+        print(json.dumps(bind_vars))
+
+        return next(map(loader, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
                     None)
 
     def match(self, *match_objects, **key_value_match) -> Q:
