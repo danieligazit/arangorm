@@ -42,10 +42,10 @@ class SubsidiaryOf:
 
 
 if __name__ == '__main__':
-    opm = DB(username='root', password='', db_name='test')
-    zirra = opm.get(Company).match(outbound(SubsidiaryOf), employee_number=30).outbound(SubsidiaryOf).first() #.out(SubsidiaryOf).to().out(SubsidiaryOf).first()
+    opm = DB(username='root', password='', db_name='new_test')
+    zirra = opm.get(Company).match(outbound(SubsidiaryOf), employee_number=30).first() #.outbound(SubsidiaryOf).first() #.out(SubsidiaryOf).to().out(SubsidiaryOf).first()
 
-    print(zirra)
+    print(zirra.subsidiary_of)
     # zirra.subsidiary_of.daughter.name = 'zirra'
     # opm.upsert(zirra)
     # zirra = opm.get(Company).match(employee_number=30).first()

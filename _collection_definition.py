@@ -37,8 +37,8 @@ def edge(collection: str, from_collections: List[Collection] = None, to_collecti
         class_dict['__init__'] = __init__
 
         @classmethod
-        def _get_collection(_):
-            return EdgeCollection(name=collection, from_collections=from_collections, to_collections=to_collections)
+        def _get_collection(cls):
+            return EdgeCollection(name=collection, document_type=cls, from_collections=from_collections, to_collections=to_collections)
 
         class_dict['_get_collection'] = _get_collection
 
@@ -104,8 +104,8 @@ def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recurs
         class_dict['__init__'] = __init__
 
         @classmethod
-        def _get_collection(_):
-            return Collection(name=collection)
+        def _get_collection(cls):
+            return Collection(name=collection, document_type=cls)
 
         class_dict['_get_collection'] = _get_collection
 

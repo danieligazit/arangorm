@@ -29,7 +29,6 @@ class Cursor(Returns, Aliased):
     def first(self):
         query_stmt = self._to_stmt(prefix='p')
 
-
         if self.project:
             loader = self.project._load
             query_str, bind_vars = query_stmt.expand_without_return()
@@ -41,6 +40,7 @@ class Cursor(Returns, Aliased):
             project_str, project_vars = project_stmt.expand()
             query_str += DELIMITER + 'RETURN ' + project_str
             bind_vars.update(project_vars)
+            print(loader)
         else:
             query_str, bind_vars = query_stmt.expand()
             loader = query_stmt.result._load
@@ -48,8 +48,9 @@ class Cursor(Returns, Aliased):
         print(query_str)
         print(json.dumps(bind_vars))
 
-        return next(map(loader, self.db.db.aql.execute(query_str, bind_vars=bind_vars), repeat(self.db)),
-                    None)
+        result = self.db.db.aql.execute(query_str, bind_vars=bind_vars)
+        print(result)
+        return next(map(loader, result, repeat(self.db)))
 
     def match(self, *match_objects, **key_value_match) -> Q:
         self.matchers += match_objects

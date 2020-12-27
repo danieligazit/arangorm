@@ -58,6 +58,7 @@ class Document:
         ''', bind_vars=bind_vars)
 
     def __getattribute__(self, item):
+
         edge_schema = object.__getattribute__(self, '_get_edge_schema')()
 
         value = object.__getattribute__(self, item)
@@ -84,12 +85,14 @@ class Document:
 
     @classmethod
     def _load(cls, result, db, id_to_doc: Dict[str, Any] = None):
+
         if not id_to_doc:
             id_to_doc = {}
 
         edge_schema = cls._get_edge_schema()
 
         loaded = cls(**result, _db=db)
+
         id_to_doc[loaded._id] = loaded
 
         for key, edge in edge_schema.items():
