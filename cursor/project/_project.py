@@ -141,10 +141,10 @@ class HasEdge(QueryStep):
             traversal_id += '._from' if self.direction is Direction.OUTBOUND else '._to'
 
         return Stmt(f'''(
-                FOR v_{prefix}, e_{prefix} IN {self.direction} {traversal_id} {target_type._get_collection()}
+                FOR v_{prefix}, e_{prefix} IN {self.direction} {traversal_id} {target_type._get_collection().name}
                     RETURN MERGE(e_{prefix}, {{
                         {return_str}
-                    }})
+                     }})
 
             ){'' if self.many else '[0]'}''', bind_vars=bind_vars)
 

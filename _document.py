@@ -25,7 +25,7 @@ class Document:
         return DocumentCursor(project=cls, collection=cls._get_collection(), db=db)
 
     @classmethod
-    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = '', parent: 'Cursor' = None):
+    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
         if max_recursion.get(cls.__name__, max_recursion.default_factory()) == 0:
             return Stmt.expandable()
 
@@ -89,22 +89,26 @@ class Document:
         if not id_to_doc:
             id_to_doc = {}
 
-        edge_schema = cls._get_edge_schema()
+        if result is None:
+            return None
+
+        target_schema = cls._get_edge_schema()
+        to_expand = []
+
+        for key, target in target_schema.items():
+            value = result.get(key)
+
+            if key not in result or value is False:
+                result[key] = MISSING
+                continue
+
+            to_expand.append((key, value, target))
 
         loaded = cls(**result, _db=db)
-
         id_to_doc[loaded._id] = loaded
 
-        for key, edge in edge_schema.items():
-            if key not in result:
-                continue
-
-            value = result[key]
-            if value is False:
-                setattr(loaded, key, MISSING)
-                continue
-
-            setattr(loaded, key, edge._load(value, db, id_to_doc=id_to_doc))
+        for key, value, target in to_expand:
+            setattr(loaded, key, target._load(value, db, id_to_doc=id_to_doc))
 
         return loaded
 

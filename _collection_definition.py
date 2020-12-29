@@ -3,7 +3,7 @@ from typing import List, Type, Dict
 from _collection import Collection, EdgeCollection
 from _document import Document
 from _edge_entity import EdgeEntity
-from cursor._str_to_type import STR_TO_TYPE
+from cursor._str_to_type import STR_TO_TYPE, COLLECTION_NAME_TO_TYPE
 from cursor.project._project import EdgeTarget, HasEdge
 
 
@@ -74,6 +74,7 @@ def edge(collection: str, from_collections: List[Collection] = None, to_collecti
 
         new_type = type(cls.__name__, (EdgeEntity,), class_dict)
         STR_TO_TYPE[cls.__name__] = new_type
+        COLLECTION_NAME_TO_TYPE[collection] = new_type
         return new_type
 
     return class_creator
@@ -140,6 +141,7 @@ def document(collection: str, edge_schema: Dict[str, HasEdge] = None, max_recurs
         del class_dict['__dict__']
         new_type = type(cls.__name__, (Document,), class_dict)
         STR_TO_TYPE[cls.__name__] = new_type
+        COLLECTION_NAME_TO_TYPE[collection] = new_type
         return new_type
 
     return class_creator

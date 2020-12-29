@@ -102,18 +102,21 @@ class EdgeEntity:
             return None
 
         target_schema = cls._get_target_schema()
+        to_expand = []
+
+        for key, target in target_schema.items():
+            value = result.get(key)
+
+            if key not in result or value is False:
+                result[key] = MISSING
+                continue
+
+            to_expand.append((key, value, target))
+
         loaded = cls(**result, _db=db)
         id_to_doc[loaded._id] = loaded
 
-        for key, target in target_schema.items():
-            if key not in result:
-                continue
-
-            value = result[key]
-            if value is False:
-                setattr(loaded, key, MISSING)
-                continue
-
+        for key, value, target in to_expand:
             setattr(loaded, key, target._load(value, db, id_to_doc=id_to_doc))
 
         return loaded

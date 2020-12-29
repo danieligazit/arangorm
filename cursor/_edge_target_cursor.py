@@ -1,6 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
+from _collection import Collection
 from _stmt import Stmt
 from cursor._cursor import Cursor
 from cursor._document_cursor import DocumentCursor
@@ -8,7 +9,7 @@ from cursor._document_cursor import DocumentCursor
 
 @dataclass
 class EdgeTargetCursor(Cursor):
-    collection: str
+    collection: Collection
 
     def _to_stmt(self, prefix: str):
         returns = f'o_{prefix}'
@@ -16,6 +17,6 @@ class EdgeTargetCursor(Cursor):
                                                       returns=returns)
 
         return Stmt(f'''
-            FOR {returns} IN {self.collection}
+            FOR {returns} IN {self.collection.name}
                 {step_str}
             ''', returns=returns, bind_vars=bind_vars)

@@ -1,1 +1,3 @@
 STR_TO_TYPE = {}
+COLLECTION_NAME_TO_TYPE = {}
+
