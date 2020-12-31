@@ -37,10 +37,10 @@ class Country:
 
 
 @edge(
-    collection='subsidiary_of',
+    collection='located_in',
     from_collections=[Company],
     to_collections=[Country]
 )
 @dataclass
-class SubsidiaryOf:
+class LocatedIn:
     confirmed: bool

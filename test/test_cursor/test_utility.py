@@ -29,6 +29,7 @@ def compare_query(cursor: Cursor, query_str: str, bind_vars: Dict[str, Any], ret
 
     print(compare_to_str.strip().replace('\n', '').replace(' ', ''))
     print(query_str.strip().replace('\n', '').replace(' ', ''))
+    print(query_str.strip().replace('\n', '').replace(' ', '') == compare_to_str.strip().replace('\n', '').replace(' ', ''))
     print(compare_to_stmt.result)
     print(compare_to_bind_vars)
 

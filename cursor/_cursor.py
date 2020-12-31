@@ -3,7 +3,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from inspect import isclass
 from itertools import repeat
-from typing import Type, Any, Tuple, Dict, List, TypeVar, Union
+from typing import Type, Any, Tuple, Dict, List, TypeVar, Union, Optional
 
 from _result import Result, DOCUMENT_RESULT, VALUE_RESULT, ListResult, DictResult
 from _stmt import Stmt
@@ -79,6 +79,10 @@ class Cursor(Returns, Aliased):
             bind_vars = {}
 
         for matcher in self.matchers:
+            if isinstance(matcher, InnerCursor):
+                print('nono', returns, matcher)
+                matcher.outer_cursor_returns = returns
+
             query_stmt, matcher_vars = matcher._to_filter_stmt(prefix=f'{prefix}_{bind_vars_index}',
                                                                relative_to=relative_to).expand_without_return()
             step_stmts.append(query_stmt)
@@ -315,3 +319,18 @@ class Select(Cursor, Selected):
 
     def _to_select_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result] = None) -> Stmt:
         return self._to_stmt(prefix, alias_to_result=alias_to_result)
+
+
+@dataclass
+class InnerCursor(Cursor):
+    outer_cursor_returns: Optional[str]
+
+    def _set_outer_query(self, outer_query: Cursor):
+        if not self.outer_cursor:
+            self.outer_cursor = outer_query
+            return
+
+        if not isinstance(self.outer_cursor, InnerCursor):
+            raise TypeError
+
+        self.outer_cursor._set_outer_query(outer_query)

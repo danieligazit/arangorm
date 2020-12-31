@@ -6,38 +6,24 @@ from _collection import EdgeCollection, Collection
 from _direction import Direction
 from _result import ListResult, AnyResult, Result, DOCUMENT_RESULT
 from _stmt import Stmt
-from cursor._cursor import Cursor
-from cursor._edge_cursor import EdgeCursor
+from cursor._cursor import Cursor, InnerCursor
+from cursor._grouped import Grouped
 from cursor.filters._filter import Filter
-
-
-@dataclass
-class InnerCursor(Cursor):
-    outer_cursor_returns: Optional[str]
-
-    def _set_outer_query(self, outer_query: Cursor):
-        if not self.outer_cursor:
-            self.outer_cursor = outer_query
-            return
-
-        if not isinstance(self.outer_cursor, InnerCursor):
-            raise TypeError
-
-        self.outer_cursor._set_outer_query(outer_query)
 
 
 def traversal_edge_collection_names(edge_collections: List[EdgeCollection]) -> str:
     return ",".join([e.name for e in edge_collections]) if edge_collections else ""
 
 
+
 @dataclass
-class EdgeTargetTraversalCursor(Filter, InnerCursor):  # , Grouped,
+class EdgeTargetTraversalCursor(Filter, InnerCursor, Grouped):
     target_collections: List[Collection]
     outer_cursor: Optional[Cursor]
     direction: Direction
 
-    def out(self, *edge_collection_types: Type['Edge'], min_depth: int = None,
-            max_depth: int = None) -> 'EdgeTraversalQuery':
+    def outbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None,
+                 max_depth: int = None) -> 'EdgeTraversalQuery':
         return EdgeTraversalCursor(
             project=self.project,
             db=self.db,
@@ -52,20 +38,24 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor):  # , Grouped,
     def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None,
                 max_depth: int = None) -> 'EdgeTraversalCursor':
         return EdgeTraversalCursor(
-            outer_query_returns='',
+            project=self.project,
+            db=self.db,
+            outer_cursor_returns='',
             edge_collections=[e._get_collection() for e in edge_collection_types],
-            direction='INBOUND',
-            outer_query=self,
+            direction=Direction.INBOUND,
+            outer_cursor=self,
             min_depth=min_depth,
             max_depth=max_depth
         )
 
     def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None):
-        return EdgeQuery(
-            outer_query_returns='',
+        return EdgeTraversalCursor(
+            project=self.project,
+            db=self.db,
+            outer_cursor_returns='',
             edge_collections=[e._get_collection() for e in edge_collection_types],
-            direction='ANY',
-            outer_query=self,
+            direction=Direction.ANY,
+            outer_cursor=self,
             min_depth=min_depth,
             max_depth=max_depth
         )
@@ -81,8 +71,7 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor):  # , Grouped,
             alias_to_result = {}
 
         returns = f'{prefix}_v'
-        result = self._get_result(AnyResult([t.document_type for t in self.target_collections]) if len(
-            self.target_collections) > 0 else DOCUMENT_RESULT)
+        result = self._get_result(DOCUMENT_RESULT)
 
         step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
                                                                       returns=returns + self.attribute_return,
@@ -91,7 +80,6 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor):  # , Grouped,
         filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
 
         if self.outer_cursor:
-
             edge_query = self.outer_cursor
 
             previous_str = ''
@@ -122,6 +110,9 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor):  # , Grouped,
         ''', bind_vars, alias_to_result=alias_to_result, result=result,
                     returns=returns + self.attribute_return, aliases=self.aliases)
 
+    def __len__(self):
+        return Value(previous=self)
+
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
 
         relative_to = relative_to[:-1] + 'v' if relative_to.endswith('e') else relative_to
@@ -131,15 +122,15 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor):  # , Grouped,
             edge_query = self.outer_cursor
             filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
             previous_str = ''
+            if self.outer_cursor.outer_cursor:
 
-            if self.outer_cursor.outer_query:
                 filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {relative_to})" for t in self.target_collections])}''' if self.target_collections else ''
 
                 step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=relative_to,
                                                                               returns=returns + self.attribute_return,
                                                                               prefix=prefix, bind_vars_index=0)
 
-                previous_stmt = self.outer_cursor.outer_query._to_stmt(f'{prefix}_0')
+                previous_stmt = self.outer_cursor.outer_cursor._to_stmt(f'{prefix}_0')
                 previous_str, previous_bind_vars = previous_stmt.expand_without_return()
                 bind_vars.update(previous_bind_vars)
                 relative_to = previous_stmt.returns
@@ -250,7 +241,8 @@ class EdgeTraversalCursor(Filter, InnerCursor):  # , Grouped, Selected,
                 {step_stmts}
         ''', bind_vars, returns=f'{prefix}_e' + self.attribute_return, result=result, aliases=self.aliases)
 
-    def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
+    def _to_stmt(self, prefix: str, alias_to_result: Dict[str, Result] = None) -> Stmt:
+        print('outer_cursor_returns', self.outer_cursor_returns)
         return self._get_traversal_stmt(prefix, alias_to_result=alias_to_result, relative_to=self.outer_cursor_returns)
 
     def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
@@ -313,6 +305,32 @@ class DocumentCursor(Cursor):
             max_depth=max_depth
         )
 
+    def inbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None,
+                max_depth: int = None) -> EdgeTraversalCursor:
+        return EdgeTraversalCursor(
+            db=self.db,
+            project=None,
+            outer_cursor_returns='',
+            edge_collections=[e._get_collection() for e in edge_collection_types],
+            direction=Direction.INBOUND,
+            outer_cursor=self,
+            min_depth=min_depth,
+            max_depth=max_depth
+        )
+
+    def connected_by(self, *edge_collection_types: Type['Edge'], min_depth: int = None,
+                     max_depth: int = None) -> EdgeTraversalCursor:
+        return EdgeTraversalCursor(
+            db=self.db,
+            project=None,
+            outer_cursor_returns='',
+            edge_collections=[e._get_collection() for e in edge_collection_types],
+            direction=Direction.ANY,
+            outer_cursor=self,
+            min_depth=min_depth,
+            max_depth=max_depth
+        )
+
 
 def outbound(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeTraversalCursor:
     return EdgeTraversalCursor(
@@ -356,6 +374,8 @@ def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None,
 
 def to(*collection_types: Type['Document']) -> EdgeTargetTraversalCursor:
     return EdgeTargetTraversalCursor(
+        project=None,
+        db=None,
         target_collections=[c._get_collection() for c in collection_types],
         outer_cursor=None,
         outer_cursor_returns=None,

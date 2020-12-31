@@ -1,11 +1,11 @@
-from _query import *
+from _result import DictResult, DOCUMENT_RESULT
 from test.test_cursor.test_classes import Company
-from test.test_cursor.test_utility import compare_query
+from test.test_cursor.test_utility import compare_query, TEST_DB
 
 
 def test_select_document():
     compare_query(
-        query=Company.match().select(object),
+        cursor=TEST_DB.get(Company).select(object),
         query_str='''FOR o_p_0 IN company'''
                   '''  RETURN {'''
                   '''    @p_2: (o_p_0)'''
