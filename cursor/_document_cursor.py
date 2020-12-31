@@ -297,10 +297,11 @@ class DocumentCursor(Cursor):
         return Stmt(f'''
             FOR {returns} IN {self.collection.name}
                 {step_str}
-            ''', returns=returns, bind_vars=bind_vars)
+            ''', returns=returns, bind_vars=bind_vars, result=self._get_result(self.collection.document_type),
+                    aliases=self.aliases, alias_to_result=alias_to_result)
 
     def outbound(self, *edge_collection_types: Type['Edge'], min_depth: int = None,
-            max_depth: int = None) -> EdgeTraversalCursor:
+                 max_depth: int = None) -> EdgeTraversalCursor:
         return EdgeTraversalCursor(
             db=self.db,
             project=None,
@@ -339,7 +340,8 @@ def inbound(*edge_collection_types: Type['Edge'], min_depth: int = None, max_dep
     )
 
 
-def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None, max_depth: int = None) -> EdgeTraversalCursor:
+def connected_by(*edge_collection_types: Type['Edge'], min_depth: int = None,
+                 max_depth: int = None) -> EdgeTraversalCursor:
     return EdgeTraversalCursor(
         db=None,
         project=None,

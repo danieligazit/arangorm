@@ -1,6 +1,6 @@
 from _query import *
-from test.test_classes import Company, Country, LocatedIn
-from test.test_utility import compare_query
+from test.test_cursor.test_classes import Company, Country, LocatedIn
+from test.test_cursor.test_utility import compare_query
 
 
 def test_group():

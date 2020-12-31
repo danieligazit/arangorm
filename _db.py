@@ -15,28 +15,13 @@ TEdge = TypeVar('TEdge', bound='Edge')
 TDocument = TypeVar('TDocument', bound='Document')
 
 
-class DB:
+class BaseDB:
     def __init__(self, db_name: str, username: str, password: str, graph_name: str = 'main',
                  serializer: Callable[[Any], str] = json.dumps, deserializer: Callable[[str], Any] = json.loads):
         self.client = ArangoClient(serializer=serializer, deserializer=deserializer)
         self.db = self.client.db(db_name, username=username, password=password)
         self.collection_definition = {}
         self.graph = self._ensure_graph(graph_name)
-
-    def with_collections(self, *collections: Type) -> 'DB':
-        for document_type in collections:
-            if not issubclass(document_type, Document):
-                raise TypeError(f'{document_type} is not a document type')
-
-            collection = document_type._get_collection()
-            if issubclass(document_type, Edge):
-                self._ensure_edge_collection(collection)
-            else:
-                self._ensure_collection(collection)
-
-            self.collection_definition[collection.name] = collection
-
-        return self
 
     def _ensure_graph(self, graph_name: str) -> Graph:
         if self.db.has_graph(graph_name):

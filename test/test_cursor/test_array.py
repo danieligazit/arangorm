@@ -1,7 +1,7 @@
 from _query import out, var
-from _result import DictResult, DOCUMENT_RESULT, ListResult, AnyResult
-from test.test_classes import Company, LocatedIn, Country
-from test.test_utility import compare_query
+from _result import DictResult, ListResult, AnyResult
+from test.test_cursor.test_classes import Company, LocatedIn, Country
+from test.test_cursor.test_utility import compare_query
 
 
 def test_array_traversal():

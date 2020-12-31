@@ -1,6 +1,6 @@
 from _query import *
-from test.test_classes import Company, LocatedIn, Country, SubsidiaryOf
-from test.test_utility import compare_query
+from test.test_cursor.test_classes import Company, LocatedIn, Country, SubsidiaryOf
+from test.test_cursor.test_utility import compare_query
 
 
 def test_edge_no_collection():

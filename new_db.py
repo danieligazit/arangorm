@@ -10,9 +10,13 @@ from arango import ArangoClient
 from arango.graph import Graph
 from arango.collection import Collection as ArangoCollection, EdgeCollection as ArangoEdgeCollection
 from _collection import Collection, EdgeCollection
+from _document import Document
+from _edge_entity import EdgeEntity
+from cursor._str_to_type import COLLECTION_NAME_TO_TYPE
 
 TEdge = TypeVar('TEdge', bound='Edge')
 TDocument = TypeVar('TDocument', bound='Document')
+
 
 
 class DB:
@@ -22,21 +26,22 @@ class DB:
         self.db = self.client.db(db_name, username=username, password=password)
         self.collection_definition = {}
         self.graph = self._ensure_graph(graph_name)
+        self._ensure_collections()
 
-    # def with_collections(self, *collections: Type) -> 'DB':
-    #     for document_type in collections:
-    #         if not issubclass(document_type, Document):
-    #             raise TypeError(f'{document_type} is not a document type')
-    #
-    #         collection = document_type._get_collection()
-    #         if issubclass(document_type, Edge):
-    #             self._ensure_edge_collection(collection)
-    #         else:
-    #             self._ensure_collection(collection)
-    #
-    #         self.collection_definition[collection.name] = collection
-    #
-    #     return self
+    def _ensure_collections(self) -> 'DB':
+        for collection_name, document_type in COLLECTION_NAME_TO_TYPE.items():
+            if not issubclass(document_type, Document) and not issubclass(document_type, EdgeEntity):
+                raise TypeError(f'{document_type} is not a document type')
+
+            collection = document_type._get_collection()
+            if issubclass(document_type, EdgeEntity):
+                self._ensure_edge_collection(collection)
+            else:
+                self._ensure_collection(collection)
+
+            self.collection_definition[collection.name] = collection
+
+        return self
 
     def _ensure_graph(self, graph_name: str) -> Graph:
         if self.db.has_graph(graph_name):

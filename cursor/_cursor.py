@@ -33,28 +33,14 @@ class Cursor(Returns, Aliased):
 
     def first(self):
         query_stmt = self._to_stmt(prefix='p')
+        query_str, bind_vars = self.get_query()
 
         if self.project:
             loader = self.project._load
-            query_str, bind_vars = query_stmt.expand_without_return()
-            project_stmt = self.project._get_stmt(prefix=f'project',
-                                                  max_recursion=defaultdict(lambda: 1,
-                                                                            self.project._get_max_recursion()),
-                                                  relative_to=query_stmt.returns, parent=self)
-
-            project_str, project_vars = project_stmt.expand()
-            query_str += DELIMITER + 'RETURN ' + project_str
-            bind_vars.update(project_vars)
-            print(loader)
         else:
-            query_str, bind_vars = query_stmt.expand()
             loader = query_stmt.result._load
 
-        print(query_str)
-        print(json.dumps(bind_vars))
-
         try:
-            print(loader)
             result = self.db.db.aql.execute(query_str, bind_vars=bind_vars)
             return next(map(loader, result, repeat(self.db)))
         except Exception as e:
@@ -67,6 +53,23 @@ class Cursor(Returns, Aliased):
             self.matchers.append(eq(key, value))
 
         return self
+
+    def get_query(self) -> Tuple[str, Dict[str, Any]]:
+        query_stmt = self._to_stmt(prefix='p')
+
+        if self.project:
+            query_str, bind_vars = query_stmt.expand_without_return()
+            project_stmt = self.project._get_stmt(prefix=f'project',
+                                                  max_recursion=defaultdict(lambda: 1,
+                                                                            self.project._get_max_recursion()),
+                                                  relative_to=query_stmt.returns, parent=self)
+
+            project_str, project_vars = project_stmt.expand()
+            query_str += DELIMITER + 'RETURN ' + project_str
+            bind_vars.update(project_vars)
+            return query_str, bind_vars
+        else:
+            return query_stmt.expand()
 
     def _get_step_stmts(self, relative_to: str, prefix: str, returns: str, bind_vars: Dict[str, Any] = None,
                         bind_vars_index: int = 0) -> Tuple[str, Dict[str, Any], int]:
@@ -82,8 +85,8 @@ class Cursor(Returns, Aliased):
             bind_vars.update(matcher_vars)
             bind_vars_index += len(matcher_vars)
 
-        # for alias in self.aliases:
-        #     step_stmts.append(f'''LET {alias} = {returns}''')
+        for alias in self.aliases:
+            step_stmts.append(f'''LET {alias} = {returns}''')
 
         return DELIMITER.join(step_stmts), bind_vars, bind_vars_index
 
