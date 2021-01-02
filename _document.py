@@ -25,7 +25,7 @@ class Document:
         return DocumentCursor(project=cls, collection=cls._get_collection(), db=db)
 
     @classmethod
-    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = ''):
+    def _get_stmt(cls, prefix: str, max_recursion: defaultdict, relative_to: str = '', parent: 'Cursor' = None):
         if max_recursion.get(cls.__name__, max_recursion.default_factory()) == 0:
             return Stmt.expandable()
 

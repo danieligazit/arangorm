@@ -1,4 +1,5 @@
 import json
+from abc import ABC
 from collections import defaultdict
 from dataclasses import dataclass, field
 from inspect import isclass
@@ -7,13 +8,16 @@ from typing import Type, Any, Tuple, Dict, List, TypeVar, Union, Optional
 
 from _result import Result, DOCUMENT_RESULT, VALUE_RESULT, ListResult, DictResult
 from _stmt import Stmt
+from _utils import hasattrribute
 from cursor._aliased import Aliased
 from cursor._grouped import Grouped
+from cursor._operator import Operator
 from cursor._returns import Returns
 from cursor._selected import Selected
 from cursor._document_field import Field
 from cursor._var import Var
 from cursor.filters._attribute_filters import eq
+from cursor.filters._value_filter import ValueFilter
 
 Q = TypeVar('Q', bound='Cursor')
 
@@ -35,6 +39,8 @@ class Cursor(Returns, Aliased):
         query_stmt = self._to_stmt(prefix='p')
         query_str, bind_vars = self.get_query()
 
+        print(query_str)
+        print(json.dumps(bind_vars))
         if self.project:
             loader = self.project._load
         else:
@@ -79,9 +85,23 @@ class Cursor(Returns, Aliased):
             bind_vars = {}
 
         for matcher in self.matchers:
+
             if isinstance(matcher, InnerCursor):
-                print('nono', returns, matcher)
                 matcher.outer_cursor_returns = returns
+
+            if isinstance(matcher, ValueFilter):
+                traversal_cursor = matcher.outer_cursor.outer_cursor
+                if traversal_cursor.__class__.__name__ == 'EdgeTraversalCursor':
+                    traversal_cursor = traversal_cursor.outer_cursor
+                if traversal_cursor.__class__.__name__ == 'EdgeTargetTraversalCursor':
+                    while hasattrribute(traversal_cursor, 'outer_cursor'):
+                        if hasattrribute(traversal_cursor.outer_cursor, 'outer_cursor') and traversal_cursor.outer_cursor.outer_cursor:
+                            traversal_cursor = traversal_cursor.outer_cursor.outer_cursor
+                            continue
+                        break
+
+                if traversal_cursor:
+                    traversal_cursor.outer_cursor_returns = relative_to
 
             query_stmt, matcher_vars = matcher._to_filter_stmt(prefix=f'{prefix}_{bind_vars_index}',
                                                                relative_to=relative_to).expand_without_return()
@@ -156,6 +176,9 @@ class Cursor(Returns, Aliased):
             display_field_to_grouped[display_field] = Field(field=field)
 
         return Select(cursor=self, display_field_to_selected=display_field_to_grouped, project=None, db=self.db)
+
+    def count(self):
+        return CountCursor(outer_cursor=self, project=None, db=self.db, outer_cursor_returns='')
 
 
 @dataclass
@@ -325,12 +348,42 @@ class Select(Cursor, Selected):
 class InnerCursor(Cursor):
     outer_cursor_returns: Optional[str]
 
-    def _set_outer_query(self, outer_query: Cursor):
-        if not self.outer_cursor:
-            self.outer_cursor = outer_query
-            return
 
-        if not isinstance(self.outer_cursor, InnerCursor):
-            raise TypeError
+@dataclass
+class ValueCursor(InnerCursor):
+    outer_cursor: 'Cursor'
 
-        self.outer_cursor._set_outer_query(outer_query)
+    def __gt__(self, other):
+        return ValueFilter(outer_cursor=self, operator=Operator.GT, compare_to=other)
+
+    def __ge__(self, other):
+        return ValueFilter(outer_cursor=self, operator=Operator.GTE, compare_to=other)
+
+    def __lt__(self, other):
+        return ValueFilter(outer_cursor=self, operator=Operator.LT, compare_to=other)
+
+    def __le__(self, other):
+        return ValueFilter(outer_cursor=self, operator=Operator.LTE, compare_to=other)
+
+    def __ne__(self, other):
+        return ValueFilter(outer_cursor=self, operator=Operator.NE, compare_to=other)
+
+    def __eq__(self, other):
+        return ValueFilter(outer_cursor=self, operator=Operator.EQ, compare_to=other)
+
+
+@dataclass(eq=False)
+class CountCursor(ValueCursor):
+
+    def _to_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Any] = None) -> Stmt:
+        if not alias_to_result:
+            alias_to_result = {}
+
+        previous_stmt = self.outer_cursor._get_traversal_stmt(prefix, relative_to=relative_to,
+                                                              alias_to_result=alias_to_result)
+        previous_str, previous_bind_vars = previous_stmt.expand_without_return()
+
+        return Stmt(f'''LENGTH((
+            {previous_str}
+            RETURN 1
+        ))''', bind_vars=previous_bind_vars)

@@ -1,11 +1,11 @@
-from _query import *
+from _result import VALUE_RESULT
 from test.test_cursor.test_classes import Company
-from test.test_cursor.test_utility import compare_query
+from test.test_cursor.test_utility import compare_query, TEST_DB
 
 
 def test_document_attribute():
     compare_query(
-        query=Company.match().name,
+        cursor=TEST_DB.get(Company).name,
         query_str='''FOR o_p IN company'''
                   '''  RETURN o_p.name''',
         bind_vars={},
@@ -16,7 +16,7 @@ def test_document_attribute():
 
 def test_document_nested_attribute():
     compare_query(
-        query=Company.match().address.city,
+        cursor=TEST_DB.get(Company).match().address.city,
         query_str='''FOR o_p IN company'''
                   '''  RETURN o_p.address.city''',
         bind_vars={},
@@ -27,7 +27,7 @@ def test_document_nested_attribute():
 
 def test_edge_attribute():
     compare_query(
-        query=Company.match().outbound().name,
+        cursor=TEST_DB.get(Company).match().outbound().name,
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id'''
                   '''    RETURN p_e.name''',
@@ -39,7 +39,7 @@ def test_edge_attribute():
 
 def test_edge_target_attribute():
     compare_query(
-        query=Company.match().outbound().to().name,
+        cursor=TEST_DB.get(Company).match().outbound().to().name,
         query_str='''FOR o_p_0 IN company'''
                   '''  FOR p_v, p_e IN 1..1 OUTBOUND o_p_0._id'''
                   '''    RETURN p_v.name''',
@@ -51,7 +51,7 @@ def test_edge_target_attribute():
 
 def test_edge_target_edge_attribute():
     compare_query(
-        query=Company.match().outbound().to().outbound().name,
+        cursor=TEST_DB.get(Company).match().outbound().to().outbound().name,
         query_str='''FOR o_p_0_0 IN company'''
                   '''  FOR p_0_v, p_0_e IN 1..1 OUTBOUND o_p_0_0._id'''
                   '''    FOR p_v, p_e IN 1..1 OUTBOUND p_0_v._id'''
@@ -64,7 +64,7 @@ def test_edge_target_edge_attribute():
 
 def test_edge_target_edge_target_attribute():
     compare_query(
-        query=Company.match().outbound().to().outbound().name,
+        cursor=TEST_DB.get(Company).match().outbound().to().outbound().name,
         query_str='''FOR o_p_0_0 IN company'''
                   '''  FOR p_0_v, p_0_e IN 1..1 OUTBOUND o_p_0_0._id'''
                   '''    FOR p_v, p_e IN 1..1 OUTBOUND p_0_v._id'''
@@ -77,7 +77,7 @@ def test_edge_target_edge_target_attribute():
 
 def test_document_as_var_select_attribute():
     compare_query(
-        query=Company.match().as_var('a').select(var('a').name),
+        cursor=TEST_DB.get(Company).match().as_var('a').select(var('a').name),
         query_str='''FOR o_p_0 IN company'''
                   '''  LET a = o_p_0'''
                   '''  RETURN {'''
@@ -91,7 +91,7 @@ def test_document_as_var_select_attribute():
 
 def test_array_at_index_attribute():
     compare_query(
-        query=Company.match().as_var('a').array(Company.match(industry=var('a').industry))[0].industry,
+        cursor=TEST_DB.get(Company).match().as_var('a').array(Company.match(industry=var('a').industry))[0].industry,
         query_str='''FOR o_p_0 IN company'''
                   '''  LET a = o_p_0'''
                   '''  LET oqr_p = o_p_0'''

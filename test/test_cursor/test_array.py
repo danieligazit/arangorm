@@ -1,18 +1,20 @@
-from _query import out, var
+
 from _result import DictResult, ListResult, AnyResult
+from cursor._document_cursor import outbound
+from cursor._var import var
 from test.test_cursor.test_classes import Company, LocatedIn, Country
-from test.test_cursor.test_utility import compare_query
+from test.test_cursor.test_utility import compare_query, TEST_DB
 
 
 def test_array_traversal():
     compare_query(
-        query=Company.match().as_var('a').array(out(LocatedIn).to(Country)).as_var('b').select(company=var('a'),
+        cursor=TEST_DB.get(Company).match().as_var('a').array(outbound(LocatedIn).to(Country)).as_var('b').select(company=var('a'),
                                                                                                countries=var('b')),
         query_str='''FOR o_p_0_0 IN company'''
                   '''  LET a = o_p_0_0'''
                   '''  LET oqr_p_0 = o_p_0_0'''
                   '''  LET array_p_0 = ('''
-                  '''    FOR p_0_1_v, p_0_1_e IN 1..1 OUTBOUND oqr_p_0._id located_at'''
+                  '''    FOR p_0_1_v, p_0_1_e IN 1..1 OUTBOUND oqr_p_0._id located_in'''
                   '''      FILTER IS_SAME_COLLECTION('country',p_0_1_v)'''
                   '''      RETURN p_0_1_v'''
                   '''  )'''

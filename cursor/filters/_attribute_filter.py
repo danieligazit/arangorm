@@ -14,7 +14,6 @@ class AttributeFilter(Filter):
     compare_value: Any
 
     def _to_filter_stmt(self, prefix: str, relative_to: str) -> Stmt:
-
         if isinstance(self.compare_value, Var):
             return Stmt(f'FILTER {relative_to}.{self.attribute} {self.operator} {self.compare_value._name}{self.compare_value.attribute_return}',
                         {})

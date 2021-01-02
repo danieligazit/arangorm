@@ -17,16 +17,9 @@ def convert_camel_to_snake(name):
     return re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name).lower()
 
 
-def returns(return_entity: str):
-    def decorator(func):
-        def inner_function(self, prefix: str = 'p', with_return: bool = False) -> Tuple[str, Dict[str, Any]]:
-            stmt, bind_vars = func(self, prefix=prefix, with_return=with_return)
-
-            if with_return:
-                return stmt + f' RETURN {return_entity}', bind_vars
-
-            return stmt, bind_vars
-
-        return inner_function
-
-    return decorator
+def hasattrribute(obj: Any, item: str) -> bool:
+    try:
+        obj.__getattribute__(item)
+        return True
+    except:
+        return False

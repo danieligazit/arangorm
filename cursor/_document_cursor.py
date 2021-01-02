@@ -8,16 +8,14 @@ from _result import ListResult, AnyResult, Result, DOCUMENT_RESULT
 from _stmt import Stmt
 from cursor._cursor import Cursor, InnerCursor
 from cursor._grouped import Grouped
-from cursor.filters._filter import Filter
 
 
 def traversal_edge_collection_names(edge_collections: List[EdgeCollection]) -> str:
     return ",".join([e.name for e in edge_collections]) if edge_collections else ""
 
 
-
 @dataclass
-class EdgeTargetTraversalCursor(Filter, InnerCursor, Grouped):
+class EdgeTargetTraversalCursor(InnerCursor, Grouped):
     target_collections: List[Collection]
     outer_cursor: Optional[Cursor]
     direction: Direction
@@ -61,17 +59,24 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor, Grouped):
         )
 
     def _to_stmt(self, prefix: str = 'p', alias_to_result: Dict[str, Result] = None) -> Stmt:
-        return self._get_traversal_stmt(prefix, f'{prefix}_v', alias_to_result)
+        return self._get_traversal_stmt(prefix, '', alias_to_result)
 
     def _get_traversal_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result] = None):
-        if self.outer_cursor_returns:
+        if not relative_to:
             relative_to = self.outer_cursor_returns
 
         if not alias_to_result:
             alias_to_result = {}
 
-        returns = f'{prefix}_v'
+        if self.outer_cursor:
+            returns = f'{prefix}_v'
+        else:
+            returns = self.outer_cursor_returns[:-1] + 'v'
+
         result = self._get_result(DOCUMENT_RESULT)
+
+        if relative_to.endswith('e'):
+            relative_to = relative_to[:-1] + 'v'
 
         step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
                                                                       returns=returns + self.attribute_return,
@@ -84,12 +89,14 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor, Grouped):
 
             previous_str = ''
 
-            outer_query_step_stmts, bind_vars, bind_vars_index = self.outer_cursor._get_step_stmts(
+            outer_cursor_step_stmts, bind_vars, bind_vars_index = self.outer_cursor._get_step_stmts(
                 relative_to=f'{prefix}_e', bind_vars=bind_vars, bind_vars_index=bind_vars_index,
                 prefix=f'{prefix}', returns=f'{prefix}_e' + self.outer_cursor.attribute_return)
 
             if self.outer_cursor.outer_cursor:
-                previous_stmt = self.outer_cursor.outer_cursor._to_stmt(f'{prefix}_0', alias_to_result=alias_to_result)
+                previous_stmt = self.outer_cursor.outer_cursor._get_traversal_stmt(f'{prefix}_0',
+                                                                                   relative_to=relative_to,
+                                                                                   alias_to_result=alias_to_result)
                 alias_to_result.update(previous_stmt.alias_to_result)
                 previous_str, previous_bind_vars = previous_stmt.expand_without_return()
                 bind_vars.update(previous_bind_vars)
@@ -100,77 +107,14 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor, Grouped):
             FOR {prefix}_v, {prefix}_e IN {self.outer_cursor.min_depth}..{self.outer_cursor.max_depth} {edge_query.direction} {relative_to}._id {",".join([e.name for e in edge_query.edge_collections]) if edge_query.edge_collections else ""}
                 {filter_target_collection}
                 {step_stmts}
-                {outer_query_step_stmts}
+                {outer_cursor_step_stmts}
             ''', bind_vars, alias_to_result=alias_to_result, returns=returns + self.attribute_return,
                         result=result, aliases=self.aliases)
-
         return Stmt(f'''
             {filter_target_collection}
             {step_stmts}
         ''', bind_vars, alias_to_result=alias_to_result, result=result,
                     returns=returns + self.attribute_return, aliases=self.aliases)
-
-    def __len__(self):
-        return Value(previous=self)
-
-    def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
-
-        relative_to = relative_to[:-1] + 'v' if relative_to.endswith('e') else relative_to
-        returns = f'{prefix}_v'
-
-        if self.outer_cursor:
-            edge_query = self.outer_cursor
-            filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {returns})" for t in self.target_collections])}''' if self.target_collections else ''
-            previous_str = ''
-            if self.outer_cursor.outer_cursor:
-
-                filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {relative_to})" for t in self.target_collections])}''' if self.target_collections else ''
-
-                step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=relative_to,
-                                                                              returns=returns + self.attribute_return,
-                                                                              prefix=prefix, bind_vars_index=0)
-
-                previous_stmt = self.outer_cursor.outer_cursor._to_stmt(f'{prefix}_0')
-                previous_str, previous_bind_vars = previous_stmt.expand_without_return()
-                bind_vars.update(previous_bind_vars)
-                relative_to = previous_stmt.returns
-
-            else:
-                step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=returns,
-                                                                              returns=returns + self.attribute_return,
-                                                                              prefix=prefix, bind_vars_index=0)
-
-            outer_query_step_stmts, bind_vars, bind_vars_index = self.outer_cursor._get_step_stmts(
-                relative_to=f'{prefix}_e', bind_vars=bind_vars, bind_vars_index=bind_vars_index,
-                prefix=f'{prefix}', returns=f'{prefix}_e' + self.outer_cursor.attribute_return)
-
-            return Stmt(f'''
-            LET {prefix}_sub = (
-                {previous_str}
-                FOR {prefix}_v, {prefix}_e IN {self.outer_cursor.min_depth}..{self.outer_cursor.max_depth} {edge_query.direction} {relative_to}._id {",".join([e.name for e in edge_query.edge_collections]) if edge_query.edge_collections else ""}
-                    {filter_target_collection}
-                    {step_stmts}
-                    {outer_query_step_stmts}
-                    RETURN 1
-            )
-            FILTER LENGTH({prefix}_sub) > 0
-            ''', bind_vars)
-
-        filter_target_collection = f'''FILTER {" OR ".join([f"IS_SAME_COLLECTION('{t.name}', {relative_to})" for t in self.target_collections])}''' if self.target_collections else ''
-
-        step_stmts, bind_vars, bind_vars_index = self._get_step_stmts(relative_to=relative_to,
-                                                                      returns=returns + self.attribute_return,
-                                                                      prefix=prefix, bind_vars_index=0)
-
-        return Stmt(f'''
-            LET {prefix}_sub = (
-                {filter_target_collection}
-                {step_stmts}
-                RETURN 1
-            )
-            FILTER LENGTH({prefix}_sub) > 0
-
-        ''', bind_vars)
 
     def _to_group_stmt(self, prefix: str, collected, alias_to_result: Dict[str, Result]) -> Stmt:
         traversal_stmt = self._get_traversal_stmt(prefix, relative_to=f'{prefix}_doc', alias_to_result=alias_to_result)
@@ -186,7 +130,7 @@ class EdgeTargetTraversalCursor(Filter, InnerCursor, Grouped):
 
 
 @dataclass
-class EdgeTraversalCursor(Filter, InnerCursor):  # , Grouped, Selected,
+class EdgeTraversalCursor(InnerCursor):  # , Grouped, Selected,
     edge_collections: List[EdgeCollection]
     outer_cursor: Optional[Cursor]
     direction: Direction
@@ -224,7 +168,8 @@ class EdgeTraversalCursor(Filter, InnerCursor):  # , Grouped, Selected,
                                                                       prefix=prefix)
 
         if self.outer_cursor:
-            previous_stmt = self.outer_cursor._to_stmt(prefix=f'{prefix}_0', alias_to_result=alias_to_result)
+            previous_stmt = self.outer_cursor._to_stmt(prefix=f'{prefix}_0',
+                                                       alias_to_result=alias_to_result)
             alias_to_result.update(previous_stmt.alias_to_result)
             previous_str, previous_vars = previous_stmt.expand_without_return()
             bind_vars.update(previous_vars)
@@ -242,19 +187,7 @@ class EdgeTraversalCursor(Filter, InnerCursor):  # , Grouped, Selected,
         ''', bind_vars, returns=f'{prefix}_e' + self.attribute_return, result=result, aliases=self.aliases)
 
     def _to_stmt(self, prefix: str, alias_to_result: Dict[str, Result] = None) -> Stmt:
-        print('outer_cursor_returns', self.outer_cursor_returns)
         return self._get_traversal_stmt(prefix, alias_to_result=alias_to_result, relative_to=self.outer_cursor_returns)
-
-    def _to_filter_stmt(self, prefix: str = 'p', relative_to: str = None) -> Stmt:
-        traversal_stmt = self._get_traversal_stmt(prefix, relative_to=relative_to)
-        traversal_stmt.query_str = f'''
-            LET {prefix}_sub = (
-                {traversal_stmt.query_str}
-                RETURN 1
-            )
-
-            FILTER LENGTH({prefix}_sub) > 0'''
-        return traversal_stmt
 
     def _to_group_stmt(self, prefix: str, collected: str, alias_to_result: Dict[str, Result]) -> Stmt:
         traversal_stmt = self._get_traversal_stmt(prefix, relative_to=f'{prefix}_doc', alias_to_result=alias_to_result)
@@ -281,9 +214,11 @@ class DocumentCursor(Cursor):
     def _to_stmt(self, prefix: str, alias_to_result: Dict[str, Result] = None):
         if not alias_to_result:
             alias_to_result = {}
+            return self._get_traversal_stmt(prefix, relative_to=f'o_{prefix}', alias_to_result=alias_to_result)
 
+    def _get_traversal_stmt(self, prefix: str, relative_to: str, alias_to_result: Dict[str, Result]):
         returns = f'o_{prefix}'
-        step_str, bind_vars, _ = self._get_step_stmts(prefix=prefix, relative_to=returns,
+        step_str, bind_vars, _ = self._get_step_stmts(prefix=prefix, relative_to=relative_to,
                                                       returns=returns)
 
         return Stmt(f'''

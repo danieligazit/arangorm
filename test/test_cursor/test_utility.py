@@ -20,20 +20,17 @@ TEST_DB = TestDB()
 def compare_query(cursor: Cursor, query_str: str, bind_vars: Dict[str, Any], returns: str, result: Union[Result, Document, EdgeEntity]):
     compare_to_stmt = cursor._to_stmt(prefix='p')
     compare_to_str, compare_to_bind_vars = compare_to_stmt.expand()
+    print(compare_to_str)
     formatted = compare_to_str
     for key, value in bind_vars.items():
         formatted.replace(key, str(value).replace('True', 'true').replace('False', 'false'))
 
-    formatted = _RE_COMBINE_WHITESPACE.sub("\n", formatted)
-    print(formatted)
+    compare_to_str = compare_to_str.strip().replace('\n', '').replace(' ', '')
+    query_str = query_str.strip().replace('\n', '').replace(' ', '')
 
-    print(compare_to_str.strip().replace('\n', '').replace(' ', ''))
-    print(query_str.strip().replace('\n', '').replace(' ', ''))
-    print(query_str.strip().replace('\n', '').replace(' ', '') == compare_to_str.strip().replace('\n', '').replace(' ', ''))
-    print(compare_to_stmt.result)
-    print(compare_to_bind_vars)
-
-    assert compare_to_str.strip().replace('\n', '').replace(' ', '') == query_str.strip().replace('\n', '').replace(' ',                                                                                                                '')
+    print('generated: ', compare_to_str)
+    print('manual:    ', query_str)
+    assert compare_to_str == query_str
     assert compare_to_bind_vars == bind_vars
     assert compare_to_stmt.returns == returns
     assert compare_to_stmt.result == result

@@ -1,5 +1,5 @@
 from typing import Any
-from cursor.filters._attribute_filter_generators import AttributeFilter
+from cursor.filters._attribute_filter import AttributeFilter
 
 
 def like(attribute: str, compare_value: Any) -> AttributeFilter:
